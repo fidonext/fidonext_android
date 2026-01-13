@@ -30,6 +30,18 @@ An Android messenger application built with Kotlin and Jetpack Compose, featurin
 - Android NDK (r26+)
 - cargo-ndk or manual NDK setup
 
+## Quick Start
+If you already have the prerequisites installed, just run the following commands:
+
+- ./scripts/build.sh
+- ./scripts/run.sh
+
+It will build the Rust library and run the app on two different emulators.
+
+```bash
+./gradlew assembleDebug
+```
+
 ## Setup
 
 1. **Install Rust**:

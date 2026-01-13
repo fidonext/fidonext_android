@@ -7,6 +7,10 @@ set -e  # Exit on error
 
 echo "🔨 Building FidoNext Android App..."
 
+# Build Rust library first
+echo "🦀 Building Rust libp2p library..."
+cd rust && ./build.sh && cd ..
+
 # Clean previous builds
 echo "📦 Cleaning previous builds..."
 ./gradlew clean
