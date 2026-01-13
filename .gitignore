@@ -1,0 +1,33 @@
+.idea/
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Rust build artifacts (downloadable at build time)
+rust/target/
+rust/Cargo.lock
+
+# Native libraries (built at compile time)
+app/src/main/jniLibs/
+app/.cxx/
+app/build/
+
+# Gradle cache and build outputs
+.gradle/
+build/
+*/build/
+
+# NDK/CMake generated files
+app/src/main/cpp/.cxx/

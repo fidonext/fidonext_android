@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FidoNext Messenger</string>
+    <string name="message_hint">Type a message...</string>
+    <string name="send">Send</string>
+    <string name="chat_title">Chat</string>
+</resources>
