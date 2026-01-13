@@ -33,6 +33,7 @@ An Android messenger application built with Kotlin and Jetpack Compose, featurin
 ## Quick Start
 If you already have the prerequisites installed, just run the following commands:
 
+- Provide a relay list at app/src/main/assets/bootstrap_nodes.txt
 - ./scripts/build.sh
 - ./scripts/run.sh
 
