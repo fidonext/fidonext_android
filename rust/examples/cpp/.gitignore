@@ -1,7 +1,0 @@
-#dirs
-/.vs
-**/*out*/
-**/*build*/
-
-#Extensions
-*.json

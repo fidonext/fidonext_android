@@ -2,7 +2,7 @@
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 
-# Keep Rust native methods
+# Keep libp2p JNI native methods
 -keepclasseswithmembernames class * {
     native <methods>;
 }

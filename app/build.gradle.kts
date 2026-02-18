@@ -3,6 +3,19 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Download pre-built libcabi_rust_libp2p from fidonext-core releases before native build
+val libp2pSo = file("src/main/jniLibs/arm64-v8a/libcabi_rust_libp2p.so")
+val downloadLibp2p by tasks.registering(Exec::class) {
+    val script = rootProject.file("scripts/download_libcabi_rust_libp2p.sh")
+    commandLine("bash", script.absolutePath)
+    onlyIf { script.exists() && !libp2pSo.exists() }
+    outputs.file(libp2pSo)
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(downloadLibp2p)
+}
+
 android {
     namespace = "com.fidonext.messenger"
     compileSdk = 34
@@ -17,7 +30,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            // Pre-built libcabi_rust_libp2p from fidonext-core releases is arm64-v8a only
+            abiFilters += listOf("arm64-v8a")
         }
 
         externalNativeBuild {

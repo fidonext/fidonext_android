@@ -15,11 +15,7 @@
 .cxx
 local.properties
 
-# Rust build artifacts (downloadable at build time)
-rust/target/
-rust/Cargo.lock
-
-# Native libraries (built at compile time)
+# Native libraries (downloaded at build time from fidonext-core releases)
 app/src/main/jniLibs/
 app/.cxx/
 app/build/
@@ -31,3 +27,5 @@ build/
 
 # NDK/CMake generated files
 app/src/main/cpp/.cxx/
+
+AGENTS.md
