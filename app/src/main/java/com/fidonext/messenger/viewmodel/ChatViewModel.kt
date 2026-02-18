@@ -123,6 +123,8 @@ class ChatViewModel : ViewModel() {
                 }
                 return@launch
             }
+            // Brief wait for DHT to propagate prekey records (examples show DHT can be slow behind NAT/relay)
+            delay(3000L)
             val setOk = libp2pService?.setActiveRecipient(id) ?: false
             withContext(Dispatchers.Main) {
                 _activeRecipient.value = if (setOk) id else null
@@ -161,7 +163,7 @@ class ChatViewModel : ViewModel() {
                 val success = libp2pService?.sendEncryptedMessage(content) ?: false
                 if (!success) {
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Failed to send. Ensure the other app is open and try again in a few seconds."
+                        _connectionStatus.value = "Send failed. Both apps must be open on same relay; wait 10–15s after connecting, then retry."
                     }
                 }
             } catch (e: Exception) {

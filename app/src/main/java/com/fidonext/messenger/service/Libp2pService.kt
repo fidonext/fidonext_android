@@ -32,6 +32,8 @@ class Libp2pService : Service() {
         private const val CHANNEL_ID = "libp2p_service_channel"
         private const val HEALTH_CHECK_INTERVAL_MS = 5000L
         private const val MESSAGE_POLL_INTERVAL_MS = 100L
+        /** Re-announce directory+prekey to DHT periodically (mirrors Python _announce_loop) */
+        private const val DIRECTORY_REANNOUNCE_INTERVAL_MS = 10 * 60 * 1000L
 
         init {
             // Load native libraries
@@ -114,13 +116,29 @@ class Libp2pService : Service() {
         }
 
         override fun sendEncryptedMessage(plaintext: String?): Boolean {
-            if (nodeHandle == 0L) return false
-            val toPeerId = activeRecipientPeerId ?: return false
-            val profile = profilePath ?: return false
-            val fromPeerId = Libp2pNative.cabiNodeLocalPeerId(nodeHandle) ?: return false
+            if (nodeHandle == 0L) {
+                Log.w(TAG, "sendEncryptedMessage failed: node not initialized")
+                return false
+            }
+            val toPeerId = activeRecipientPeerId
+            if (toPeerId == null) {
+                Log.w(TAG, "sendEncryptedMessage failed: no active recipient set")
+                return false
+            }
+            val profile = profilePath
+            if (profile == null) {
+                Log.w(TAG, "sendEncryptedMessage failed: no profile path")
+                return false
+            }
+            val fromPeerId = Libp2pNative.cabiNodeLocalPeerId(nodeHandle)
+            if (fromPeerId == null) {
+                Log.w(TAG, "sendEncryptedMessage failed: could not get local peer id")
+                return false
+            }
 
-            val prekeyBundle = this@Libp2pService.getOrFetchRecipientPrekeyBundle(toPeerId) ?: run {
-                Log.w(TAG, "No recipient prekey bundle available for peer_id=$toPeerId after retries")
+            val prekeyBundle = this@Libp2pService.getOrFetchRecipientPrekeyBundle(toPeerId)
+            if (prekeyBundle == null) {
+                Log.w(TAG, "sendEncryptedMessage failed: no prekey bundle for peer_id=$toPeerId (DHT lookup failed)")
                 return false
             }
 
@@ -129,7 +147,11 @@ class Libp2pService : Service() {
                 recipientPrekeyBundle = prekeyBundle,
                 plaintext = (plaintext ?: "").toByteArray(StandardCharsets.UTF_8),
                 aad = ByteArray(0),
-            ) ?: return false
+            )
+            if (encrypted == null) {
+                Log.w(TAG, "sendEncryptedMessage failed: cabiE2eeBuildMessageAuto returned null for peer_id=$toPeerId")
+                return false
+            }
 
             val packet = JSONObject().apply {
                 put("schema", "fidonext-chat-v1")
@@ -143,7 +165,11 @@ class Libp2pService : Service() {
 
             val bytes = packet.toString().toByteArray(StandardCharsets.UTF_8)
             val status = Libp2pNative.cabiNodeEnqueueMessage(nodeHandle, bytes)
-            return status == Libp2pNative.STATUS_SUCCESS
+            if (status != Libp2pNative.STATUS_SUCCESS) {
+                Log.w(TAG, "sendEncryptedMessage failed: cabiNodeEnqueueMessage returned $status")
+                return false
+            }
+            return true
         }
 
         override fun receiveDecryptedMessage(): String? {
@@ -182,6 +208,7 @@ class Libp2pService : Service() {
 
         // Start health monitoring
         startHealthMonitoring()
+        startPeriodicReannounce()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -549,12 +576,13 @@ class Libp2pService : Service() {
 
     /**
      * Fetch recipient prekey with retries to allow DHT propagation after dialing.
-     * The other peer publishes their prekey on startup; it may take a few seconds to be visible.
+     * The other peer publishes their prekey on startup; it may take several seconds to be visible.
+     * Mirrors Python _ensure_contact_prekey_bundle retry behavior.
      */
     private fun fetchRecipientPrekeyBundleWithRetry(
         identifier: String,
-        maxAttempts: Int = 4,
-        delayBetweenAttemptsMs: Long = 2000L
+        maxAttempts: Int = 8,
+        delayBetweenAttemptsMs: Long = 2500L
     ): ByteArray? {
         for (attempt in 1..maxAttempts) {
             val bundle = fetchRecipientPrekeyBundle(identifier)
@@ -564,12 +592,13 @@ class Libp2pService : Service() {
                 Thread.sleep(delayBetweenAttemptsMs)
             }
         }
+        Log.w(TAG, "Prekey bundle not found after $maxAttempts attempts for $identifier")
         return null
     }
 
     /**
-     * Prefetch recipient prekey in background when opening chat (mirrors Python _ensure_contact_prekey_bundle).
-     * Fills recipientPrekeyCache so the first send can use it without waiting on DHT.
+     * Prefetch recipient prekey when opening chat (mirrors Python _ensure_contact_prekey_bundle).
+     * Fills recipientPrekeyCache so the first send can use it. Runs on serviceScope to avoid blocking binder.
      */
     private fun prefetchRecipientPrekey(peerId: String) {
         recipientPrekeyCache.remove(peerId)
@@ -578,6 +607,8 @@ class Libp2pService : Service() {
             if (bundle != null) {
                 recipientPrekeyCache[peerId] = bundle
                 Log.d(TAG, "Prefetched prekey for peer_id=$peerId")
+            } else {
+                Log.w(TAG, "Prefetch prekey failed for peer_id=$peerId (will retry on send)")
             }
         }
     }
@@ -625,6 +656,23 @@ class Libp2pService : Service() {
             while (isActive) {
                 delay(HEALTH_CHECK_INTERVAL_MS)
                 performHealthCheck()
+            }
+        }
+    }
+
+    /** Re-announce directory+prekey to DHT periodically (mirrors Python fidonext_chat_client _announce_loop). */
+    private fun startPeriodicReannounce() {
+        serviceScope.launch {
+            while (isActive) {
+                delay(DIRECTORY_REANNOUNCE_INTERVAL_MS)
+                if (nodeHandle != 0L && isRunning.get()) {
+                    try {
+                        val ok = announceSelf()
+                        if (ok) Log.d(TAG, "Periodic re-announce: directory+prekey published to DHT")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Periodic re-announce failed", e)
+                    }
+                }
             }
         }
     }
