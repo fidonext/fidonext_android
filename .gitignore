@@ -28,4 +28,4 @@ build/
 # NDK/CMake generated files
 app/src/main/cpp/.cxx/
 
-AGENTS.md
+#AGENTS.md
