@@ -99,6 +99,7 @@ class ChatViewModel : ViewModel() {
     /**
      * Resolve recipient (peer_id or account_id), dial via directory or find_peer discovery, then set as active.
      * Shows "Connecting..." and retries dial to give DHT/relay time (both apps must be open).
+     * Mirrors Python/Rust examples: connect, wait for DHT propagation, then fetch prekey.
      */
     fun connectToRecipient(identifier: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -113,6 +114,9 @@ class ChatViewModel : ViewModel() {
                 dialOk = libp2pService?.lookupAndDial(id) ?: false
                 if (dialOk) break
                 if (attempt < maxAttempts) {
+                    withContext(Dispatchers.Main) {
+                        _connectionStatus.value = "Connecting… (attempt $attempt/$maxAttempts)"
+                    }
                     delay(3000L)
                 }
             }
@@ -123,12 +127,20 @@ class ChatViewModel : ViewModel() {
                 }
                 return@launch
             }
-            // Brief wait for DHT to propagate prekey records (examples show DHT can be slow behind NAT/relay)
-            delay(3000L)
+            // Wait for DHT to propagate prekey records (Rust example: 2s after dial, Python: retry fetches)
+            // Increase to 5s to give more time for DHT propagation through relay
+            withContext(Dispatchers.Main) {
+                _connectionStatus.value = "Connected, fetching encryption keys…"
+            }
+            delay(5000L)
             val setOk = libp2pService?.setActiveRecipient(id) ?: false
             withContext(Dispatchers.Main) {
                 _activeRecipient.value = if (setOk) id else null
-                _connectionStatus.value = if (setOk) "Connected to: ${id.take(16)}…" else "Connected but recipient not set"
+                _connectionStatus.value = if (setOk) {
+                    "Ready to send to: ${id.take(16)}…"
+                } else {
+                    "Connected but couldn't fetch encryption keys (check logs)"
+                }
             }
         }
     }
