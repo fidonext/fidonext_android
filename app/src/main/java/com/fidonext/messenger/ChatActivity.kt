@@ -3,40 +3,40 @@ package com.fidonext.messenger
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fidonext.messenger.service.Libp2pService
-import com.fidonext.messenger.ui.PeerListScreen
+import com.fidonext.messenger.ui.ChatScreen
 import com.fidonext.messenger.ui.theme.FidoNextTheme
-import com.fidonext.messenger.viewmodel.PeerListViewModel
+import com.fidonext.messenger.viewmodel.ChatViewModel
 
-class MainActivity : ComponentActivity() {
+const val EXTRA_PEER_ID = "com.fidonext.messenger.EXTRA_PEER_ID"
+
+class ChatActivity : ComponentActivity() {
 
     private var libp2pService: ILibp2pService? = null
     private var serviceBound = false
-    private var peerListViewModel: PeerListViewModel? = null
+    private var chatViewModel: ChatViewModel? = null
 
-    private val serviceConnection = object : ServiceConnection {
+    private val serviceConnection = object : android.content.ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             libp2pService = ILibp2pService.Stub.asInterface(service)
             serviceBound = true
-            peerListViewModel?.let {
-                it.bindService(libp2pService!!, this@MainActivity)
+            chatViewModel?.let {
+                it.bindService(libp2pService!!, this@ChatActivity)
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             libp2pService = null
             serviceBound = false
-            peerListViewModel?.unbindService()
+            chatViewModel?.unbindService()
         }
     }
 
@@ -45,32 +45,28 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Load native libraries
-        System.loadLibrary("cabi_rust_libp2p")
-        System.loadLibrary("libp2p_jni")
+        val peerId = intent.getStringExtra(EXTRA_PEER_ID)
 
-        // Start and bind to libp2p service
+        // Bind to the already-running libp2p service
         val serviceIntent = Intent(this, Libp2pService::class.java)
-        startForegroundService(serviceIntent)
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         setContent {
             FidoNextTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background
                 ) {
-                    PeerListScreen(
+                    ChatScreen(
                         viewModel = viewModel(),
-                        onViewModelCreated = { peerListViewModel = it },
+                        initialPeerId = peerId,
+                        onViewModelCreated = { chatViewModel = it },
                         onServiceBound = {
                             getServiceIfBound()?.let { service ->
-                                peerListViewModel?.bindService(service, this@MainActivity)
+                                chatViewModel?.bindService(service, this@ChatActivity)
                             }
                         },
-                        onPeerClick = { peerIdentifier ->
-                            startActivity(ChatActivity.createIntent(this@MainActivity, peerIdentifier))
-                        }
+                        onBackClick = { finish() }
                     )
                 }
             }
@@ -82,6 +78,14 @@ class MainActivity : ComponentActivity() {
         if (serviceBound) {
             unbindService(serviceConnection)
             serviceBound = false
+        }
+    }
+
+    companion object {
+        fun createIntent(context: Context, peerIdentifier: String): Intent {
+            return Intent(context, ChatActivity::class.java).apply {
+                putExtra(EXTRA_PEER_ID, peerIdentifier)
+            }
         }
     }
 }

@@ -1,26 +1,15 @@
 # FidoNext Android Refactoring Summary
 
 ## Overview
-This document summarizes the refactoring performed to integrate `cabi_rust_libp2p` from the `fidonext-core` repository as a dependency and run it as an Android service.
+This document summarizes the refactoring to integrate `cabi_rust_libp2p` from [fidonext-core](https://github.com/fidonext/fidonext-core) and run it as an Android service. **The project uses pre-built binaries only**; there is no Rust or native libp2p source in this repo.
 
 ## Changes Made
 
-### 1. Dependency Management
+### 1. Native library: pre-built only
 
-#### Rust Dependencies (`rust/Cargo.toml`)
-- **Changed**: Updated to use `cabi-rust-libp2p` from GitHub instead of local implementation
-- **Before**: Local implementation with all dependencies listed
-- **After**: Single dependency from `https://github.com/fidonext/fidonext-core`
-
-```toml
-[dependencies]
-cabi-rust-libp2p = { git = "https://github.com/fidonext/fidonext-core", branch = "main" }
-```
-
-#### Rust Source (`rust/src/lib.rs`)
-- **Changed**: Simplified to re-export functionality from external crate
-- **Removed**: All local implementations (~700 lines)
-- **Result**: Clean 4-line re-export module
+- **Source**: Pre-built Android binary and C header from [fidonext-core releases](https://github.com/fidonext/fidonext-core/releases) (e.g. v0.0.4).
+- **Download**: `scripts/download_libcabi_rust_libp2p.sh` (or Gradle `preBuild` when the library is missing).
+- **Removed**: Entire `rust/` directory (Cargo, build scripts, Rust source). No Rust toolchain or build-from-source in this project.
 
 ### 2. Android Service Architecture
 
@@ -83,13 +72,8 @@ cabi-rust-libp2p = { git = "https://github.com/fidonext/fidonext-core", branch =
   - All build-time dependencies
 - **Purpose**: Reduce repository size by excluding downloadable build artifacts
 
-### 7. Removed Files
-- `rust/src/config.rs`
-- `rust/src/messaging/` (directory)
-- `rust/src/peer/` (directory)
-- `rust/src/transport/` (directory)
-
-**Result**: Removed ~2000 lines of duplicate code
+### 7. Removed
+- Entire `rust/` directory (Rust source, Cargo.toml, build.sh, examples, etc.). The app uses only pre-built `libcabi_rust_libp2p` from fidonext-core releases.
 
 ## Architecture Benefits
 
@@ -100,7 +84,7 @@ Android App → JNI → Local Rust Implementation → libp2p
 
 ### After
 ```
-Android App → Service (AIDL) → JNI → fidonext-core (GitHub) → libp2p
+Android App → Service (AIDL) → JNI → pre-built libcabi_rust_libp2p (from fidonext-core releases) → libp2p
 ```
 
 ## Key Features Implemented
@@ -153,20 +137,18 @@ bool enable_relay_hop = false;
 
 ## Build Instructions
 
-1. **Ensure Rust toolchain is installed** with Android targets:
+1. **Build the project** (no Rust required):
    ```bash
-   rustup target add aarch64-linux-android armv7-linux-androideabi
+   ./scripts/build.sh
+   ```
+   or
+   ```bash
+   ./gradlew assembleDebug
    ```
 
-2. **Build the project**:
-   ```bash
-   ./gradlew build
-   ```
-
-3. **The build process will**:
-   - Download fidonext-core from GitHub
-   - Compile Rust code for Android targets
-   - Generate JNI libraries
+2. **The build process will**:
+   - Download the pre-built `libcabi_rust_libp2p` from fidonext-core releases (if missing)
+   - Build the Android app and JNI wrapper
    - Package into APK
 
 ## Testing Checklist

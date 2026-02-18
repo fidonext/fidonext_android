@@ -57,9 +57,9 @@ constexpr int CABI_AUTONAT_PUBLIC  = 2;
 
 // Payload statuses
 // Queue contains no new messages.
-constexpr int CABI_STATUS_QUEUE_EMPTY = 4;
+constexpr int CABI_STATUS_QUEUE_EMPTY = -1;
 // Provided buffer too small to hold the next message.
-constexpr int CABI_STATUS_BUFFER_TOO_SMALL = 5;
+constexpr int CABI_STATUS_BUFFER_TOO_SMALL = -2;
 // Default capacity for the message queue.
 constexpr int DEFAULT_MESSAGE_QUEUE_CAPACITY = 64;
 
@@ -71,11 +71,13 @@ using NewNodeFunc = void* (*)(
   size_t bootstrapPeersLen,
   const uint8_t* identitySeedPtr,
   size_t identitySeedLen);
+using ReserveRelayFunc = int (*)(void* handle, const char* multiaddr);
 using ListenNodeFunc = int (*)(void* handle, const char* multiaddr);
 using DialNodeFunc = int (*)(void* handle, const char* multiaddr);
 using AutonatStatusFunc = int (*)(void* handle);
 using EnqueueMessageFunc = int (*)(void* handle, const uint8_t* data_ptr, size_t data_len);
 using DequeueMessageFunc = int (*)(void* handle, uint8_t* out_buffer, size_t buffer_len, size_t* written_len);
+using GetAddrsSnapshotFunc = int (*)(void* handle, uint64_t* out_version, char* out_buf, size_t out_buf_len, size_t* out_written);
 using LocalPeerIdFunc = int (*)(void* handle, char* out_buffer, size_t buffer_len, size_t* written_len);
 using FreeNodeFunc = void (*)(void* handle);
 
@@ -83,11 +85,13 @@ struct CabiRustLibp2p
 {
   InitTracingFunc       InitTracing{};
   NewNodeFunc           NewNode{};
+  ReserveRelayFunc      ReserveRelay{};
   ListenNodeFunc        ListenNode{};
   DialNodeFunc          DialNode{};
   AutonatStatusFunc     AutonatStatus{};
   EnqueueMessageFunc    EnqueueMessage{};
   DequeueMessageFunc    DequeueMessage{};
+  GetAddrsSnapshotFunc  GetAddrsSnapshot{};
   LocalPeerIdFunc       LocalPeerId{};
   FreeNodeFunc          FreeNode{};
 };
@@ -154,17 +158,20 @@ bool loadAbi(LibHandle lib, CabiRustLibp2p& abi)
 {
   abi.InitTracing = reinterpret_cast<InitTracingFunc>(GET_PROC(lib, "cabi_init_tracing"));
   abi.NewNode = reinterpret_cast<NewNodeFunc>(GET_PROC(lib, "cabi_node_new"));
+  abi.ReserveRelay = reinterpret_cast<ReserveRelayFunc>(GET_PROC(lib, "cabi_node_reserve_relay"));
   abi.ListenNode = reinterpret_cast<ListenNodeFunc>(GET_PROC(lib, "cabi_node_listen"));
   abi.DialNode = reinterpret_cast<DialNodeFunc>(GET_PROC(lib, "cabi_node_dial"));
   abi.AutonatStatus = reinterpret_cast<AutonatStatusFunc>(GET_PROC(lib, "cabi_autonat_status"));
   abi.EnqueueMessage = reinterpret_cast<EnqueueMessageFunc>(GET_PROC(lib, "cabi_node_enqueue_message"));
   abi.DequeueMessage = reinterpret_cast<DequeueMessageFunc>(GET_PROC(lib, "cabi_node_dequeue_message"));
+  abi.GetAddrsSnapshot = reinterpret_cast<GetAddrsSnapshotFunc>(GET_PROC(lib, "cabi_node_get_addrs_snapshot"));
   abi.LocalPeerId = reinterpret_cast<LocalPeerIdFunc>(GET_PROC(lib, "cabi_node_local_peer_id"));
   abi.FreeNode = reinterpret_cast<FreeNodeFunc>(GET_PROC(lib, "cabi_node_free"));
 
   return  abi.InitTracing && abi.NewNode && abi.ListenNode &&
           abi.DialNode && abi.AutonatStatus && abi.EnqueueMessage &&
-          abi.DequeueMessage && abi.LocalPeerId && abi.FreeNode;
+          abi.DequeueMessage && abi.GetAddrsSnapshot && abi.LocalPeerId &&
+          abi.FreeNode;
 }
 
 string defaultListen(bool useQuic)
@@ -484,12 +491,57 @@ void recvLoop(
   }
 }
 
+void getAddrsSnapshot(
+  const CabiRustLibp2p& abi,
+  void* node)
+{
+  std::vector<char> buffer(256);
+  uint64_t version = 0;
+
+  while (true)
+  {
+    size_t written = 0;
+    const auto status = abi.GetAddrsSnapshot(
+      node,
+      &version,
+      buffer.data(),
+      buffer.size(),
+      &written);
+
+    if (status == CABI_STATUS_SUCCESS)
+    {
+      const string snapshot(buffer.data(), written);
+      cout << "Addr snapshot v" << version << ":\n";
+      if (snapshot.empty())
+      {
+        cout << "(empty)\n";
+      }
+      else
+      {
+        cout << snapshot << "\n";
+      }
+      break;
+    }
+
+    if (status == CABI_STATUS_BUFFER_TOO_SMALL)
+    {
+      const auto newSize = std::max(buffer.size() * 2, written + 1);
+      buffer.resize(newSize);
+      continue;
+    }
+
+    cerr << "Failed to read addr snapshot: " << statusMessage(status) << "\n";
+    break;
+  }
+}
+
 void sendLoop(
   const CabiRustLibp2p& abi,
   void* node,
   std::atomic<bool>& keepRunning)
 {
   cout << "Enter payload (empty line or /quit to exit):\n";
+  cout << "Enter /addrs to read your address snapshot\n";
   string line;
 
   while (keepRunning.load(std::memory_order_acquire) && std::getline(std::cin, line))
@@ -499,6 +551,12 @@ void sendLoop(
     {
       keepRunning.store(false, std::memory_order_release);
       break;
+    }
+
+    // Addrs scenario
+    if (line == "/addrs")
+    {
+      getAddrsSnapshot(abi, node);
     }
 
     // This one sends the payloads
@@ -531,7 +589,24 @@ void dialPeers(const CabiRustLibp2p& abi, void* node, const std::vector<string>&
     }
     else
     {
-      cerr << "Failed to dial " << label << " peer " << addr << ": " << statusMessage(status) << "\n";
+      cerr << "Failed to dial " << label << " peer " << addr << " : " << statusMessage(status) << "\n";
+    }
+  }
+}
+
+void reserveOnRelays(const CabiRustLibp2p& abi, void* node, const std::vector<string>& peers)
+{
+  for (const auto& addr : peers)
+  {
+    const auto status = abi.ReserveRelay(node, addr.c_str());
+
+    if (status == CABI_STATUS_SUCCESS)
+    {
+      cout << "Reserved relay on " << addr << "\n";
+    }
+    else
+    {
+      cerr << "Failed to reserve relay on " << addr << " : " << statusMessage(status) << "\n";
     }
   }
 }
@@ -631,6 +706,7 @@ int main(int argc, char** argv)
         else
         {
           cout << "AutoNAT did not report PUBLIC within window; staying without hop\n";
+          reserveOnRelays(abi, node.handle, args.bootstrapPeers);
         }
       }
     }

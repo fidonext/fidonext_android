@@ -5,6 +5,9 @@
 
 set -e  # Exit on error
 
+./scripts/build.sh
+
+
 echo "🚀 Starting FidoNext on two emulators..."
 
 # Find Android SDK path
@@ -45,50 +48,71 @@ if [ ! -f "$APK_PATH" ]; then
     exit 1
 fi
 
-# Check if emulators exist
-echo "📋 Checking available emulators..."
-AVAILABLE_EMULATORS=$("$EMULATOR_CMD" -list-avds)
-echo "$AVAILABLE_EMULATORS"
-
-# Get first two available emulators
-EMULATOR1=$(echo "$AVAILABLE_EMULATORS" | sed -n '1p')
-EMULATOR2=$(echo "$AVAILABLE_EMULATORS" | sed -n '2p')
-
-if [ -z "$EMULATOR1" ] || [ -z "$EMULATOR2" ]; then
-    echo "❌ Need at least 2 emulators. Found:"
-    echo "$AVAILABLE_EMULATORS"
-    echo ""
-    echo "Create emulators using Android Studio AVD Manager or:"
-    echo "  avdmanager create avd -n Pixel_API_34 -k 'system-images;android-34;google_apis;x86_64'"
-    exit 1
+# Check for already running emulators (state "device", not "offline")
+RUNNING_EMUS=$("$ADB_CMD" devices | grep -E 'emulator-[0-9]+\s+device' | awk '{print $1}' || true)
+if [ -z "$RUNNING_EMUS" ]; then
+    RUNNING_COUNT=0
+else
+    RUNNING_COUNT=$(echo "$RUNNING_EMUS" | wc -l | tr -d ' ')
 fi
 
-# Start first emulator
-echo ""
-echo "📱 Starting first emulator: $EMULATOR1..."
-"$EMULATOR_CMD" -avd "$EMULATOR1" &
-EMULATOR1_PID=$!
-echo "Started emulator with PID: $EMULATOR1_PID"
+echo "📋 Running emulators: $RUNNING_COUNT"
 
-# Wait for first emulator to boot
-echo "⏳ Waiting for first emulator to boot..."
-"$ADB_CMD" wait-for-device
-sleep 10
-DEVICE1=$("$ADB_CMD" devices | grep emulator | head -n 1 | awk '{print $1}')
-echo "✅ First emulator ready: $DEVICE1"
+if [ "$RUNNING_COUNT" -ge 2 ]; then
+    # Use existing emulators: first two in list
+    DEVICE1=$(echo "$RUNNING_EMUS" | sed -n '1p')
+    DEVICE2=$(echo "$RUNNING_EMUS" | sed -n '2p')
+    echo "✅ Using existing emulators: $DEVICE1, $DEVICE2"
+else
+    # Need to start emulator(s)
+    echo "📋 Checking available AVDs..."
+    AVAILABLE_EMULATORS=$("$EMULATOR_CMD" -list-avds)
+    echo "$AVAILABLE_EMULATORS"
 
-# Start second emulator
-echo ""
-echo "📱 Starting second emulator: $EMULATOR2..."
-"$EMULATOR_CMD" -avd "$EMULATOR2" &
-EMULATOR2_PID=$!
-echo "Started emulator with PID: $EMULATOR2_PID"
+    EMULATOR1=$(echo "$AVAILABLE_EMULATORS" | sed -n '1p')
+    EMULATOR2=$(echo "$AVAILABLE_EMULATORS" | sed -n '2p')
 
-# Wait for second emulator to boot
-echo "⏳ Waiting for second emulator to boot..."
-sleep 15
-DEVICE2=$("$ADB_CMD" devices | grep emulator | tail -n 1 | awk '{print $1}')
-echo "✅ Second emulator ready: $DEVICE2"
+    if [ -z "$EMULATOR1" ] || [ -z "$EMULATOR2" ]; then
+        echo "❌ Need at least 2 AVDs. Found:"
+        echo "$AVAILABLE_EMULATORS"
+        echo ""
+        echo "Create emulators using Android Studio AVD Manager or:"
+        echo "  avdmanager create avd -n Pixel_API_34 -k 'system-images;android-34;google_apis;x86_64'"
+        exit 1
+    fi
+
+    if [ "$RUNNING_COUNT" -eq 0 ]; then
+        # Start first emulator
+        echo ""
+        echo "📱 Starting first emulator: $EMULATOR1..."
+        "$EMULATOR_CMD" -avd "$EMULATOR1" &
+        echo "⏳ Waiting for first emulator to boot..."
+        "$ADB_CMD" wait-for-device
+        sleep 10
+        DEVICE1=$("$ADB_CMD" devices | grep -E 'emulator-[0-9]+\s+device' | head -n 1 | awk '{print $1}')
+        echo "✅ First emulator ready: $DEVICE1"
+
+        # Start second emulator
+        echo ""
+        echo "📱 Starting second emulator: $EMULATOR2..."
+        "$EMULATOR_CMD" -avd "$EMULATOR2" &
+        echo "⏳ Waiting for second emulator to boot..."
+        sleep 15
+        DEVICE2=$("$ADB_CMD" devices | grep -E 'emulator-[0-9]+\s+device' | tail -n 1 | awk '{print $1}')
+        echo "✅ Second emulator ready: $DEVICE2"
+    else
+        # One already running
+        DEVICE1=$(echo "$RUNNING_EMUS" | sed -n '1p')
+        echo "✅ Using existing emulator: $DEVICE1"
+        echo ""
+        echo "📱 Starting second emulator: $EMULATOR2..."
+        "$EMULATOR_CMD" -avd "$EMULATOR2" &
+        echo "⏳ Waiting for second emulator to boot..."
+        sleep 15
+        DEVICE2=$("$ADB_CMD" devices | grep -E 'emulator-[0-9]+\s+device' | tail -n 1 | awk '{print $1}')
+        echo "✅ Second emulator ready: $DEVICE2"
+    fi
+fi
 
 # Install app on first emulator
 echo ""

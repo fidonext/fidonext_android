@@ -10,6 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -26,6 +27,8 @@ class ChatViewModel : ViewModel() {
     private var libp2pService: ILibp2pService? = null
     private var messagePollingJob: Job? = null
     private var appContext: Context? = null
+    private val _activeRecipient = MutableStateFlow<String?>(null)
+    val activeRecipient: StateFlow<String?> = _activeRecipient.asStateFlow()
 
     fun bindService(service: ILibp2pService, context: Context) {
         libp2pService = service
@@ -52,7 +55,8 @@ class ChatViewModel : ViewModel() {
                 val success = libp2pService?.initializeNode(bootstrapPeers) ?: false
                 if (success) {
                     val peerId = libp2pService?.getLocalPeerId()
-                    _connectionStatus.value = "Connected: ${peerId?.take(12)}..."
+                    val accountId = libp2pService?.getLocalAccountId()
+                    _connectionStatus.value = "Connected: ${peerId?.take(12)}… acct=${accountId?.take(8) ?: "-"}"
                 } else {
                     _connectionStatus.value = "Failed to initialize"
                 }
@@ -66,12 +70,14 @@ class ChatViewModel : ViewModel() {
         messagePollingJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
-                    val receivedMessage = libp2pService?.receiveMessage()
-                    if (receivedMessage != null && receivedMessage.isNotEmpty()) {
-                        val content = String(receivedMessage, Charsets.UTF_8)
+                    val decryptedJson = libp2pService?.receiveDecryptedMessage()
+                    if (!decryptedJson.isNullOrBlank()) {
+                        val obj = JSONObject(decryptedJson)
+                        val content = obj.optString("text")
+                        val fromPeer = obj.optString("from_peer_id").take(12)
                         val message = Message(
                             id = messageIdCounter++,
-                            content = content,
+                            content = if (fromPeer.isNotBlank()) "[$fromPeer] $content" else content,
                             timestamp = dateFormat.format(Date()),
                             isSent = false,
                             encrypted = true
@@ -81,11 +87,70 @@ class ChatViewModel : ViewModel() {
                             _messages.value = _messages.value + message
                         }
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Ignore errors during polling
                 }
 
                 delay(100) // Poll every 100ms
+            }
+        }
+    }
+
+    /**
+     * Resolve recipient (peer_id or account_id), dial via directory or find_peer discovery, then set as active.
+     * Shows "Connecting..." and retries dial to give DHT/relay time (both apps must be open).
+     * Mirrors Python/Rust examples: connect, wait for DHT propagation, then fetch prekey.
+     */
+    fun connectToRecipient(identifier: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = identifier.trim()
+            if (id.isBlank()) return@launch
+            withContext(Dispatchers.Main) {
+                _connectionStatus.value = "Connecting…"
+            }
+            val maxAttempts = 2
+            var dialOk = false
+            for (attempt in 1..maxAttempts) {
+                dialOk = libp2pService?.lookupAndDial(id) ?: false
+                if (dialOk) break
+                if (attempt < maxAttempts) {
+                    withContext(Dispatchers.Main) {
+                        _connectionStatus.value = "Connecting… (attempt $attempt/$maxAttempts)"
+                    }
+                    delay(3000L)
+                }
+            }
+            if (!dialOk) {
+                withContext(Dispatchers.Main) {
+                    _activeRecipient.value = null
+                    _connectionStatus.value = "Failed to connect. Ensure both apps are open and on same network/relay."
+                }
+                return@launch
+            }
+            // Wait for DHT to propagate prekey records (Rust example: 2s after dial, Python: retry fetches)
+            // Increase to 5s to give more time for DHT propagation through relay
+            withContext(Dispatchers.Main) {
+                _connectionStatus.value = "Connected, fetching encryption keys…"
+            }
+            delay(5000L)
+            val setOk = libp2pService?.setActiveRecipient(id) ?: false
+            withContext(Dispatchers.Main) {
+                _activeRecipient.value = if (setOk) id else null
+                _connectionStatus.value = if (setOk) {
+                    "Ready to send to: ${id.take(16)}…"
+                } else {
+                    "Connected but couldn't fetch encryption keys (check logs)"
+                }
+            }
+        }
+    }
+
+    fun setActiveRecipient(identifier: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = libp2pService?.setActiveRecipient(identifier) ?: false
+            withContext(Dispatchers.Main) {
+                _activeRecipient.value = if (ok) identifier else null
+                if (!ok) _connectionStatus.value = "Recipient not found: $identifier"
             }
         }
     }
@@ -106,11 +171,11 @@ class ChatViewModel : ViewModel() {
                     _messages.value = _messages.value + message
                 }
 
-                // Send through libp2p
-                val success = libp2pService?.sendMessage(content.toByteArray(Charsets.UTF_8)) ?: false
+                // Send through libp2p (E2EE via libcabi_rust_libp2p)
+                val success = libp2pService?.sendEncryptedMessage(content) ?: false
                 if (!success) {
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Failed to send message"
+                        _connectionStatus.value = "Send failed. Both apps must be open on same relay; wait 10–15s after connecting, then retry."
                     }
                 }
             } catch (e: Exception) {

@@ -1,11 +1,11 @@
 # FidoNext Messenger
 
-An Android messenger application built with Kotlin and Jetpack Compose, featuring Rust native library integration for secure message processing.
+An Android messenger application built with Kotlin and Jetpack Compose, using the libcabi_rust_libp2p native library from [fidonext-core](https://github.com/fidonext/fidonext-core) (pre-built binaries only; no Rust or native build in this repo).
 
 ## Features
 
 - 🎨 Modern UI with Jetpack Compose
-- 🔒 Message encryption using Rust native library
+- 🔒 Message encryption using native libp2p library
 - 💬 Real-time chat interface
 - 📱 Material Design 3
 - ⚡ High-performance message processing
@@ -15,68 +15,42 @@ An Android messenger application built with Kotlin and Jetpack Compose, featurin
 ### Android (Kotlin)
 - **UI Layer**: Jetpack Compose with Material 3
 - **ViewModel**: MVVM architecture with StateFlow
-- **JNI Bridge**: Native interface to Rust library
+- **JNI Bridge**: Native interface to libcabi_rust_libp2p (pre-built)
 
-### Rust Native Library
-- **Encryption**: Message encryption/decryption
-- **Processing**: High-performance message processing
-- **Hashing**: SHA-256 message hashing
+### Native library (libcabi_rust_libp2p)
+- Pre-built binaries from [fidonext-core releases](https://github.com/fidonext/fidonext-core/releases)
+- Downloaded at build time; JNI in `app/src/main/cpp/` links against the `.so`
 
 ## Prerequisites
 
 - Android Studio (latest version)
 - Android SDK 24+
-- Rust toolchain (1.70+)
-- Android NDK (r26+)
-- cargo-ndk or manual NDK setup
+- Android NDK (for building the JNI wrapper; installed via SDK Manager)
 
 ## Quick Start
-If you already have the prerequisites installed, just run the following commands:
 
-- Provide a relay list at app/src/main/assets/bootstrap_nodes.txt
-- ./scripts/build.sh
-- ./scripts/run.sh
-
-It will build the Rust library and run the app on two different emulators.
-
-```bash
-./gradlew assembleDebug
-```
-
-## Setup
-
-1. **Install Rust**:
+1. **Optional**: Add a relay list at `app/src/main/assets/bootstrap_nodes.txt`.
+2. **Build** (downloads libp2p binary from fidonext-core if needed, then builds the app):
    ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ./scripts/build.sh
    ```
-
-2. **Add Android targets**:
-   ```bash
-   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-   ```
-
-3. **Set up Android NDK**:
-   - Install NDK via Android Studio SDK Manager
-   - Set `ANDROID_NDK_HOME` environment variable
-
-4. **Configure NDK paths**:
-   Create `local.properties` in project root:
-   ```properties
-   sdk.dir=/path/to/Android/sdk
-   ndk.dir=/path/to/Android/sdk/ndk/26.1.10909125
-   ```
-
-5. **Build Rust library**:
-   ```bash
-   cd rust
-   chmod +x build.sh
-   ./build.sh
-   ```
-
-6. **Build Android app**:
+   Or with Gradle only:
    ```bash
    ./gradlew assembleDebug
    ```
+   The first build will run `scripts/download_libcabi_rust_libp2p.sh` to fetch the pre-built `libcabi_rust_libp2p` for arm64-v8a.
+3. **Run**: e.g. `./scripts/run.sh` or install the APK on a device/emulator.
+
+Note: Pre-built library is **arm64-v8a** only (real devices). x86/x86_64 emulators are not supported unless fidonext-core adds those binaries to releases.
+
+## Setup
+
+1. **Android Studio / SDK**: Install Android Studio and NDK (SDK Manager → SDK Tools → NDK).
+2. **local.properties** (optional, if not auto-detected):
+   ```properties
+   sdk.dir=/path/to/Android/sdk
+   ```
+3. **Build**: Run `./scripts/build.sh` or `./gradlew assembleDebug`. The first run will download the native library from GitHub releases.
 
 ## Project Structure
 
@@ -88,50 +62,24 @@ fidonext_android/
 │   │   │   ├── MainActivity.kt           # Main UI
 │   │   │   ├── data/
 │   │   │   │   └── Message.kt            # Data models
-│   │   │   ├── rust/
-│   │   │   │   └── RustNative.kt         # JNI interface
+│   │   │   ├── rust/                     # Kotlin package: JNI bindings to libp2p
+│   │   │   │   └── RustNative.kt
 │   │   │   ├── ui/theme/                 # Compose theme
 │   │   │   └── viewmodel/
 │   │   │       └── ChatViewModel.kt      # Business logic
-│   │   ├── jniLibs/                      # Compiled Rust libraries
+│   │   ├── jniLibs/                      # Pre-built libcabi_rust_libp2p (downloaded)
 │   │   └── AndroidManifest.xml
 │   └── build.gradle.kts
-├── rust/
-│   ├── src/
-│   │   └── lib.rs                        # Rust implementation
-│   ├── Cargo.toml
-│   ├── build.sh                          # Build script
-│   └── .cargo/config.toml                # NDK configuration
+├── scripts/
+│   ├── build.sh                          # Download libp2p + Gradle build
+│   └── download_libcabi_rust_libp2p.sh        # Fetch binary from fidonext-core releases
 └── build.gradle.kts
 
 ```
 
-## Building Rust Library
+## Native library (libcabi_rust_libp2p)
 
-The Rust library provides native functions for message encryption and processing:
-
-### Manual Build (macOS/Linux):
-```bash
-cd rust
-export ANDROID_NDK_HOME=/path/to/ndk
-./build.sh
-```
-
-### Using cargo-ndk:
-```bash
-cd rust
-cargo install cargo-ndk
-cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 -o ../app/src/main/jniLibs build --release
-```
-
-## Rust Native Functions
-
-The `RustNative` object exposes these methods:
-
-- `encryptMessage(message: String): String` - Encrypts a message
-- `decryptMessage(encrypted: String): String` - Decrypts a message
-- `processMessage(message: String): String` - Processes a message
-- `getVersion(): String` - Returns library version
+Pre-built binaries are downloaded from [fidonext-core releases](https://github.com/fidonext/fidonext-core/releases). To use a different version, set `FIDONEXT_CORE_RELEASE` when running the download script (e.g. `FIDONEXT_CORE_RELEASE=v0.0.3 ./scripts/download_libcabi_rust_libp2p.sh`).
 
 ## Development
 
@@ -140,11 +88,8 @@ The `RustNative` object exposes these methods:
 ./gradlew installDebug
 ```
 
-### Testing Rust code:
-```bash
-cd rust
-cargo test
-```
+### Testing:
+Use Android instrumented/unit tests as usual.
 
 ### Building release APK:
 ```bash

@@ -3,4 +3,5 @@
 # One node per line, lines starting with # are comments
 
 # Relay Node
-/ip4/10.0.0.10/tcp/41000/p2p/12D3KooWSNqRTV2JccvWYTxtDtXUk9Y1m7EcGLy65eRN1qSrDkdp
+#/ip4/10.0.0.10/tcp/41000/p2p/12D3KooWSNqRTV2JccvWYTxtDtXUk9Y1m7EcGLy65eRN1qSrDkdp
+/ip4/192.168.0.114/tcp/41000/p2p/12D3KooWK3QtiFSR9PmhNMdJGcn3LpDp7hKPiGoa361sYpQ8p1c7

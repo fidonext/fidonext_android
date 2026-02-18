@@ -7,9 +7,9 @@ set -e  # Exit on error
 
 echo "🔨 Building FidoNext Android App..."
 
-# Build Rust library first
-echo "🦀 Building Rust libp2p library..."
-cd rust && ./build.sh && cd ..
+# Download pre-built libp2p binary from fidonext-core releases (no Rust build)
+echo "📥 Downloading libp2p binary from fidonext-core releases..."
+#./scripts/download_libcabi_rust_libp2p.sh
 
 # Clean previous builds
 echo "📦 Cleaning previous builds..."
