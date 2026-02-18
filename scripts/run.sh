@@ -5,6 +5,9 @@
 
 set -e  # Exit on error
 
+./scripts/build.sh
+
+
 echo "🚀 Starting FidoNext on two emulators..."
 
 # Find Android SDK path
