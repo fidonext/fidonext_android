@@ -30,4 +30,9 @@ interface ILibp2pService {
     String receiveDecryptedMessage();
     int getAutonatStatus();
     boolean isHealthy();
+    /**
+     * Discover peers via DHT (get_closest_peers). Returns peer_id strings, excluding self.
+     * May block for several seconds while draining discovery events.
+     */
+    String[] getDiscoveredPeers();
 }

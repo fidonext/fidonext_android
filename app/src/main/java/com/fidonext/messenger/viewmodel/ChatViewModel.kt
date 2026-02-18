@@ -98,17 +98,28 @@ class ChatViewModel : ViewModel() {
 
     /**
      * Resolve recipient (peer_id or account_id), dial via directory or find_peer discovery, then set as active.
-     * Use this for "Connect" so E2EE send has a dialable peer and prekey bundle.
+     * Shows "Connecting..." and retries dial to give DHT/relay time (both apps must be open).
      */
     fun connectToRecipient(identifier: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val id = identifier.trim()
             if (id.isBlank()) return@launch
-            val dialOk = libp2pService?.lookupAndDial(id) ?: false
+            withContext(Dispatchers.Main) {
+                _connectionStatus.value = "Connecting…"
+            }
+            val maxAttempts = 2
+            var dialOk = false
+            for (attempt in 1..maxAttempts) {
+                dialOk = libp2pService?.lookupAndDial(id) ?: false
+                if (dialOk) break
+                if (attempt < maxAttempts) {
+                    delay(3000L)
+                }
+            }
             if (!dialOk) {
                 withContext(Dispatchers.Main) {
                     _activeRecipient.value = null
-                    _connectionStatus.value = "Failed to connect to: $id"
+                    _connectionStatus.value = "Failed to connect. Ensure both apps are open and on same network/relay."
                 }
                 return@launch
             }
@@ -150,7 +161,7 @@ class ChatViewModel : ViewModel() {
                 val success = libp2pService?.sendEncryptedMessage(content) ?: false
                 if (!success) {
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Failed to send (missing recipient prekey?)"
+                        _connectionStatus.value = "Failed to send. Ensure the other app is open and try again in a few seconds."
                     }
                 }
             } catch (e: Exception) {

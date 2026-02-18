@@ -16,6 +16,7 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -50,6 +51,8 @@ class Libp2pService : Service() {
     private var localDeviceId: String? = null
     private var localPeerId: String? = null
     private var activeRecipientPeerId: String? = null
+    /** Cached prekey bundle per peer_id (filled when opening chat / setActiveRecipient), used when sending. */
+    private val recipientPrekeyCache = ConcurrentHashMap<String, ByteArray>()
 
     /** Returns cached account ID; use from binder to avoid getter name clash with getLocalAccountId(). */
     private fun cachedAccountId(): String? = localAccountId
@@ -94,6 +97,7 @@ class Libp2pService : Service() {
             if (nodeHandle == 0L || identifier.isNullOrBlank()) return false
             val resolvedPeerId = this@Libp2pService.resolvePeerId(identifier.trim()) ?: return false
             activeRecipientPeerId = resolvedPeerId
+            this@Libp2pService.prefetchRecipientPrekey(resolvedPeerId)
             return true
         }
 
@@ -115,8 +119,8 @@ class Libp2pService : Service() {
             val profile = profilePath ?: return false
             val fromPeerId = Libp2pNative.cabiNodeLocalPeerId(nodeHandle) ?: return false
 
-            val prekeyBundle = fetchRecipientPrekeyBundle(toPeerId) ?: run {
-                Log.w(TAG, "No recipient prekey bundle available for peer_id=$toPeerId")
+            val prekeyBundle = this@Libp2pService.getOrFetchRecipientPrekeyBundle(toPeerId) ?: run {
+                Log.w(TAG, "No recipient prekey bundle available for peer_id=$toPeerId after retries")
                 return false
             }
 
@@ -159,6 +163,10 @@ class Libp2pService : Service() {
             val now = System.currentTimeMillis()
             lastHealthCheck.set(now)
             return nodeHandle != 0L && isRunning.get()
+        }
+
+        override fun getDiscoveredPeers(): Array<String> {
+            return this@Libp2pService.getDiscoveredPeers()
         }
     }
 
@@ -389,6 +397,64 @@ class Libp2pService : Service() {
         return addresses
     }
 
+    /**
+     * Extract peer_id from multiaddr (e.g. /ip4/.../p2p/12D3Koo... -> 12D3Koo...).
+     */
+    private fun peerIdFromMultiaddr(multiaddr: String): String? {
+        val p2p = "/p2p/"
+        val idx = multiaddr.indexOf(p2p)
+        if (idx < 0) return null
+        return multiaddr.substring(idx + p2p.length).trim().takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Run get_closest_peers for one target and collect peer IDs until deadline or FINISHED.
+     */
+    private fun collectClosestPeers(handle: Long, targetPeerId: String, excludePeerId: String?, deadlineMs: Long): Set<String> {
+        val requestId = Libp2pNative.cabiNodeGetClosestPeers(handle, targetPeerId)
+        if (requestId == 0L) return emptySet()
+        val result = mutableSetOf<String>()
+        while (System.currentTimeMillis() < deadlineMs) {
+            val event = Libp2pNative.cabiNodeDequeueDiscoveryEvent(handle)
+            if (event == null) {
+                Thread.sleep(60)
+                continue
+            }
+            if (event.requestId != requestId) continue
+            when (event.eventKind) {
+                Libp2pNative.DISCOVERY_EVENT_ADDRESS -> {
+                    val pid = event.peerId?.trim() ?: ""
+                    if (pid.isNotEmpty() && pid != excludePeerId) result.add(pid)
+                }
+                Libp2pNative.DISCOVERY_EVENT_FINISHED -> break
+            }
+        }
+        return result
+    }
+
+    /**
+     * Discover peers via DHT: get_closest_peers(self) and get_closest_peers(bootstrap relay).
+     * Returns peer_id strings excluding our own. Blocks for up to ~15s.
+     */
+    private fun getDiscoveredPeers(discoveryTimeoutMs: Long = 5_000L): Array<String> {
+        val handle = nodeHandle
+        val me = localPeerId
+        if (handle == 0L || me.isNullOrBlank()) return emptyArray()
+        val all = mutableSetOf<String>()
+        // 1) Peers close to us
+        val deadline1 = System.currentTimeMillis() + discoveryTimeoutMs.coerceAtLeast(2000L)
+        all.addAll(collectClosestPeers(handle, me, me, deadline1))
+        // 2) Peers close to each bootstrap relay (increases chance to see other clients via same relay)
+        for (multiaddr in lastBootstrapPeers) {
+            val relayPeerId = peerIdFromMultiaddr(multiaddr) ?: continue
+            if (relayPeerId == me) continue
+            val deadline2 = System.currentTimeMillis() + 3_000L
+            all.addAll(collectClosestPeers(handle, relayPeerId, me, deadline2))
+        }
+        Log.d(TAG, "getDiscoveredPeers: found ${all.size} peers")
+        return all.toTypedArray()
+    }
+
     private fun lookupAndDial(identifier: String): Boolean {
         val handle = nodeHandle
         // Direct multiaddr: dial immediately.
@@ -410,11 +476,20 @@ class Libp2pService : Service() {
                 return true
             }
         }
-        // 2) Resolve via find_peer + discovery events, then dial.
-        val discoveredAddrs = resolvePeerAddresses(peerId, 12_000L)
+        // 2) Resolve via find_peer + discovery events, then dial (longer timeout for DHT behind NAT/relay).
+        val discoveredAddrs = resolvePeerAddresses(peerId, 25_000L)
         for (addr in discoveredAddrs) {
             if (Libp2pNative.cabiNodeDial(handle, addr) == Libp2pNative.STATUS_SUCCESS) {
                 Log.i(TAG, "Dialed via discovery: $addr")
+                return true
+            }
+        }
+        // 3) Fallback: dial target via bootstrap relay (p2p-circuit). Both peers must use the same relay.
+        for (bootstrap in lastBootstrapPeers) {
+            if (bootstrap.isBlank()) continue
+            val circuitAddr = buildCircuitAddr(bootstrap, peerId) ?: continue
+            if (Libp2pNative.cabiNodeDial(handle, circuitAddr) == Libp2pNative.STATUS_SUCCESS) {
+                Log.i(TAG, "Dialed via relay circuit: $circuitAddr")
                 return true
             }
         }
@@ -422,22 +497,99 @@ class Libp2pService : Service() {
         return false
     }
 
-    private fun fetchRecipientPrekeyBundle(identifier: String): ByteArray? {
+    /** Build libp2p circuit relay addr: relay_multiaddr/p2p-circuit/p2p/dest_peer_id */
+    private fun buildCircuitAddr(relayMultiaddr: String, destPeerId: String): String? {
+        val trimmed = relayMultiaddr.trim()
+        if (trimmed.isEmpty() || destPeerId.isBlank()) return null
+        return "$trimmed/p2p-circuit/p2p/$destPeerId"
+    }
+
+    /** Get account_id from DHT directory card for peer_id (mirrors Python lookup_directory). */
+    private fun getAccountIdFromDirectory(peerId: String): String? {
         val handle = nodeHandle
-        val raw = Libp2pNative.cabiNodeDhtGetRecord(handle, prekeyKeyForPeer(identifier))
-            ?: Libp2pNative.cabiNodeDhtGetRecord(handle, prekeyKeyForAccount(identifier))
+        val raw = Libp2pNative.cabiNodeDhtGetRecord(handle, directoryKeyForPeer(peerId))
+            ?: Libp2pNative.cabiNodeDhtGetRecord(handle, directoryKeyForAccount(peerId))
             ?: return null
         return try {
             val card = JSONObject(String(raw, StandardCharsets.UTF_8))
-            if (card.optString("schema") != "fidonext-prekey-bundle-v1") return null
-            val bundleB64 = card.optString("bundle_b64")
-            if (bundleB64.isNullOrBlank()) return null
-            val bundle = android.util.Base64.decode(bundleB64, android.util.Base64.DEFAULT)
-            val status = Libp2pNative.cabiE2eeValidatePrekeyBundle(bundle, 0L)
-            if (status == Libp2pNative.STATUS_SUCCESS) bundle else null
+            if (card.optString("schema") != "fidonext-directory-v1") return null
+            card.optString("account_id").takeIf { it.isNotBlank() }
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Fetch prekey bundle from DHT. Tries peer_id then account_id (from directory) like Python lookup_prekey_bundle.
+     */
+    private fun fetchRecipientPrekeyBundle(identifier: String): ByteArray? {
+        fun tryFetch(id: String): ByteArray? {
+            val handle = nodeHandle
+            val raw = Libp2pNative.cabiNodeDhtGetRecord(handle, prekeyKeyForPeer(id))
+                ?: Libp2pNative.cabiNodeDhtGetRecord(handle, prekeyKeyForAccount(id))
+                ?: return null
+            return try {
+                val card = JSONObject(String(raw, StandardCharsets.UTF_8))
+                if (card.optString("schema") != "fidonext-prekey-bundle-v1") return null
+                val bundleB64 = card.optString("bundle_b64")
+                if (bundleB64.isNullOrBlank()) return null
+                val bundle = android.util.Base64.decode(bundleB64, android.util.Base64.DEFAULT)
+                val status = Libp2pNative.cabiE2eeValidatePrekeyBundle(bundle, 0L)
+                if (status == Libp2pNative.STATUS_SUCCESS) bundle else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+        tryFetch(identifier)?.let { return it }
+        if (identifier.startsWith("12D3") || identifier.startsWith("Qm")) {
+            getAccountIdFromDirectory(identifier)?.let { accountId -> tryFetch(accountId)?.let { return it } }
+        }
+        return null
+    }
+
+    /**
+     * Fetch recipient prekey with retries to allow DHT propagation after dialing.
+     * The other peer publishes their prekey on startup; it may take a few seconds to be visible.
+     */
+    private fun fetchRecipientPrekeyBundleWithRetry(
+        identifier: String,
+        maxAttempts: Int = 4,
+        delayBetweenAttemptsMs: Long = 2000L
+    ): ByteArray? {
+        for (attempt in 1..maxAttempts) {
+            val bundle = fetchRecipientPrekeyBundle(identifier)
+            if (bundle != null) return bundle
+            if (attempt < maxAttempts) {
+                Log.d(TAG, "Prekey not found for $identifier (attempt $attempt/$maxAttempts), retrying in ${delayBetweenAttemptsMs}ms...")
+                Thread.sleep(delayBetweenAttemptsMs)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Prefetch recipient prekey in background when opening chat (mirrors Python _ensure_contact_prekey_bundle).
+     * Fills recipientPrekeyCache so the first send can use it without waiting on DHT.
+     */
+    private fun prefetchRecipientPrekey(peerId: String) {
+        recipientPrekeyCache.remove(peerId)
+        serviceScope.launch(Dispatchers.IO) {
+            val bundle = fetchRecipientPrekeyBundleWithRetry(peerId)
+            if (bundle != null) {
+                recipientPrekeyCache[peerId] = bundle
+                Log.d(TAG, "Prefetched prekey for peer_id=$peerId")
+            }
+        }
+    }
+
+    /**
+     * Get recipient prekey: use cache if available, else fetch with retry and cache (mirrors Python send flow).
+     */
+    private fun getOrFetchRecipientPrekeyBundle(peerId: String): ByteArray? {
+        recipientPrekeyCache[peerId]?.let { return it }
+        val bundle = fetchRecipientPrekeyBundleWithRetry(peerId)
+        if (bundle != null) recipientPrekeyCache[peerId] = bundle
+        return bundle
     }
 
     private fun tryDecryptChatPacket(profile: String, payload: ByteArray): String? {
