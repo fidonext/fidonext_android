@@ -10,6 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -26,6 +27,8 @@ class ChatViewModel : ViewModel() {
     private var libp2pService: ILibp2pService? = null
     private var messagePollingJob: Job? = null
     private var appContext: Context? = null
+    private val _activeRecipient = MutableStateFlow<String?>(null)
+    val activeRecipient: StateFlow<String?> = _activeRecipient.asStateFlow()
 
     fun bindService(service: ILibp2pService, context: Context) {
         libp2pService = service
@@ -52,7 +55,8 @@ class ChatViewModel : ViewModel() {
                 val success = libp2pService?.initializeNode(bootstrapPeers) ?: false
                 if (success) {
                     val peerId = libp2pService?.getLocalPeerId()
-                    _connectionStatus.value = "Connected: ${peerId?.take(12)}..."
+                    val accountId = libp2pService?.getLocalAccountId()
+                    _connectionStatus.value = "Connected: ${peerId?.take(12)}… acct=${accountId?.take(8) ?: "-"}"
                 } else {
                     _connectionStatus.value = "Failed to initialize"
                 }
@@ -66,12 +70,14 @@ class ChatViewModel : ViewModel() {
         messagePollingJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
-                    val receivedMessage = libp2pService?.receiveMessage()
-                    if (receivedMessage != null && receivedMessage.isNotEmpty()) {
-                        val content = String(receivedMessage, Charsets.UTF_8)
+                    val decryptedJson = libp2pService?.receiveDecryptedMessage()
+                    if (!decryptedJson.isNullOrBlank()) {
+                        val obj = JSONObject(decryptedJson)
+                        val content = obj.optString("text")
+                        val fromPeer = obj.optString("from_peer_id").take(12)
                         val message = Message(
                             id = messageIdCounter++,
-                            content = content,
+                            content = if (fromPeer.isNotBlank()) "[$fromPeer] $content" else content,
                             timestamp = dateFormat.format(Date()),
                             isSent = false,
                             encrypted = true
@@ -86,6 +92,40 @@ class ChatViewModel : ViewModel() {
                 }
 
                 delay(100) // Poll every 100ms
+            }
+        }
+    }
+
+    /**
+     * Resolve recipient (peer_id or account_id), dial via directory or find_peer discovery, then set as active.
+     * Use this for "Connect" so E2EE send has a dialable peer and prekey bundle.
+     */
+    fun connectToRecipient(identifier: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = identifier.trim()
+            if (id.isBlank()) return@launch
+            val dialOk = libp2pService?.lookupAndDial(id) ?: false
+            if (!dialOk) {
+                withContext(Dispatchers.Main) {
+                    _activeRecipient.value = null
+                    _connectionStatus.value = "Failed to connect to: $id"
+                }
+                return@launch
+            }
+            val setOk = libp2pService?.setActiveRecipient(id) ?: false
+            withContext(Dispatchers.Main) {
+                _activeRecipient.value = if (setOk) id else null
+                _connectionStatus.value = if (setOk) "Connected to: ${id.take(16)}…" else "Connected but recipient not set"
+            }
+        }
+    }
+
+    fun setActiveRecipient(identifier: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = libp2pService?.setActiveRecipient(identifier) ?: false
+            withContext(Dispatchers.Main) {
+                _activeRecipient.value = if (ok) identifier else null
+                if (!ok) _connectionStatus.value = "Recipient not found: $identifier"
             }
         }
     }
@@ -106,11 +146,11 @@ class ChatViewModel : ViewModel() {
                     _messages.value = _messages.value + message
                 }
 
-                // Send through libp2p
-                val success = libp2pService?.sendMessage(content.toByteArray(Charsets.UTF_8)) ?: false
+                // Send through libp2p (E2EE via libcabi_rust_libp2p)
+                val success = libp2pService?.sendEncryptedMessage(content) ?: false
                 if (!success) {
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Failed to send message"
+                        _connectionStatus.value = "Failed to send (missing recipient prekey?)"
                     }
                 }
             } catch (e: Exception) {

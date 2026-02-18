@@ -9,7 +9,7 @@ echo "🔨 Building FidoNext Android App..."
 
 # Download pre-built libp2p binary from fidonext-core releases (no Rust build)
 echo "📥 Downloading libp2p binary from fidonext-core releases..."
-./scripts/download_libcabi_rust_libp2p.sh
+#./scripts/download_libcabi_rust_libp2p.sh
 
 # Clean previous builds
 echo "📦 Cleaning previous builds..."

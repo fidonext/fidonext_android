@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -104,8 +105,10 @@ fun ChatScreen(
 
     val messages by viewModel.messages.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
+    val activeRecipient by viewModel.activeRecipient.collectAsState()
     val listState = rememberLazyListState()
     var messageText by remember { mutableStateOf("") }
+    var recipientText by remember { mutableStateOf(activeRecipient ?: "") }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -138,6 +141,48 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(
+                    value = recipientText,
+                    onValueChange = { recipientText = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Recipient peer_id or account_id") },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (recipientText.isNotBlank()) {
+                            viewModel.connectToRecipient(recipientText.trim())
+                        }
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.secondary,
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Connect to recipient",
+                        tint = MaterialTheme.colorScheme.onSecondary
+                    )
+                }
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
