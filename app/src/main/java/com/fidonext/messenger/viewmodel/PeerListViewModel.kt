@@ -95,7 +95,7 @@ class PeerListViewModel : ViewModel() {
             val service = libp2pService ?: return@launch
             val peerIds = try {
                 service.getDiscoveredPeers() ?: emptyArray()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyArray()
             }
             val list = peerIds.map { id ->
@@ -118,7 +118,7 @@ class PeerListViewModel : ViewModel() {
         if (id.isBlank()) return
         val existing = _manualPeers.value.any { it.identifier == id }
         if (existing) return
-        _manualPeers.value = _manualPeers.value + DiscoveredPeer(
+        _manualPeers.value += DiscoveredPeer(
             displayName = peerDisplayName(id),
             identifier = id,
             isManual = true
@@ -156,17 +156,19 @@ class PeerListViewModel : ViewModel() {
             try {
                 val bootstrapPeers = appContext?.let { BootstrapConfig.loadBootstrapPeers(it) }
                     ?: BootstrapConfig.getDefaultBootstrapPeers()
+                _connectionStatus.value ="Connecting..."
                 val success = libp2pService?.initializeNode(bootstrapPeers) ?: false
                 if (success) {
                     val peerId = libp2pService?.getLocalPeerId()
                     val accountId = libp2pService?.getLocalAccountId()
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Connected: ${peerId?.take(12)}… acct=${accountId?.take(8) ?: "-"}"
+                        //_connectionStatus.value = "Connected: ${peerId?.take(12)}… acct=${accountId?.take(8) ?: "-"}"
+                        _connectionStatus.value = "Connected"
                         _localPeerId.value = peerId
                         _localAccountId.value = accountId
                     }
                     // Delay first discovery so DHT has time to bootstrap; then run and start periodic refresh
-                    delay(5_000L)
+                    delay(1000)
                     loadDiscoveredPeers()
                     startPeriodicRefresh()
                 } else {

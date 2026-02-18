@@ -31,7 +31,7 @@ class Libp2pService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "libp2p_service_channel"
         private const val HEALTH_CHECK_INTERVAL_MS = 5000L
-        private const val MESSAGE_POLL_INTERVAL_MS = 100L
+       // private const val MESSAGE_POLL_INTERVAL_MS = 100L
         /** Re-announce directory+prekey to DHT periodically (mirrors Python _announce_loop) */
         private const val DIRECTORY_REANNOUNCE_INTERVAL_MS = 10 * 60 * 1000L
 
@@ -301,8 +301,8 @@ class Libp2pService : Service() {
             }
 
             // Wait for DHT to stabilize after connecting (mirrors Rust example line 280: sleep 2s after dial)
-            Log.d(TAG, "Waiting 3s for DHT connection to stabilize...")
-            Thread.sleep(3000)
+            //Log.d(TAG, "Waiting 500ms for DHT connection to stabilize...")
+            Thread.sleep(500)
 
             // Test DHT read/write capability before announcing
             val testKey = "fidonext/test/${UUID.randomUUID()}".toByteArray(StandardCharsets.UTF_8)
@@ -310,7 +310,7 @@ class Libp2pService : Service() {
             val putStatus = Libp2pNative.cabiNodeDhtPutRecord(nodeHandle, testKey, testValue, 60L)
             if (putStatus == Libp2pNative.STATUS_SUCCESS) {
                 Log.d(TAG, "DHT write test: SUCCESS")
-                Thread.sleep(1000) // Allow propagation
+                Thread.sleep(100) // Allow propagation
                 val retrieved = Libp2pNative.cabiNodeDhtGetRecord(nodeHandle, testKey)
                 if (retrieved != null && retrieved.contentEquals(testValue)) {
                     Log.i(TAG, "DHT read/write test: SUCCESS - DHT is functional")
@@ -326,7 +326,7 @@ class Libp2pService : Service() {
             if (announceOk) {
                 Log.i(TAG, "Initial DHT announce succeeded")
                 // Verify we can read our own record back
-                Thread.sleep(1000)
+                Thread.sleep(100)
                 val selfTest = Libp2pNative.cabiNodeDhtGetRecord(nodeHandle, prekeyKeyForPeer(localPeerId!!))
                 if (selfTest != null) {
                     Log.i(TAG, "DHT self-verification: Can read own prekey record (${selfTest.size} bytes)")
@@ -513,7 +513,7 @@ class Libp2pService : Service() {
             if (event.requestId != requestId) continue
             when (event.eventKind) {
                 Libp2pNative.DISCOVERY_EVENT_ADDRESS -> {
-                    val pid = event.peerId?.trim() ?: ""
+                    val pid = event.peerId.trim()
                     if (pid.isNotEmpty() && pid != excludePeerId) result.add(pid)
                 }
                 Libp2pNative.DISCOVERY_EVENT_FINISHED -> break
@@ -577,7 +577,7 @@ class Libp2pService : Service() {
             }
         }
         // 2) Resolve via find_peer + discovery events, then dial (longer timeout for DHT behind NAT/relay).
-        val discoveredAddrs = resolvePeerAddresses(peerId, 25_000L)
+        val discoveredAddrs = resolvePeerAddresses(peerId, 12_000L)
         for (addr in discoveredAddrs) {
             if (Libp2pNative.cabiNodeDial(handle, addr) == Libp2pNative.STATUS_SUCCESS) {
                 Log.i(TAG, "Dialed via discovery: $addr")
@@ -733,7 +733,7 @@ class Libp2pService : Service() {
         recipientPrekeyCache.remove(peerId)
         serviceScope.launch(Dispatchers.IO) {
             // Try DHT first (works if both peers are on public DHT)
-            var bundle = fetchRecipientPrekeyBundleWithRetry(peerId, maxAttempts = 2, delayBetweenAttemptsMs = 1500L)
+            val bundle = fetchRecipientPrekeyBundleWithRetry(peerId, maxAttempts = 2, delayBetweenAttemptsMs = 1500L)
             if (bundle != null) {
                 recipientPrekeyCache[peerId] = bundle
                 Log.i(TAG, "Prefetched prekey from DHT for peer_id=$peerId")
@@ -967,7 +967,7 @@ class Libp2pService : Service() {
                     Libp2pNative.AUTONAT_PRIVATE -> "Private"
                     else -> "Unknown"
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 "Error"
             }
             "Running • Status: $autonatStatus"

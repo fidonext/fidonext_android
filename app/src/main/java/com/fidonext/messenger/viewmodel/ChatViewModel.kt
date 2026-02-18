@@ -87,7 +87,7 @@ class ChatViewModel : ViewModel() {
                             _messages.value = _messages.value + message
                         }
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Ignore errors during polling
                 }
 
