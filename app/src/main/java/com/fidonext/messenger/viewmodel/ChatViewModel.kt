@@ -10,6 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
@@ -26,42 +27,68 @@ class ChatViewModel : ViewModel() {
 
     private var libp2pService: ILibp2pService? = null
     private var messagePollingJob: Job? = null
+    private var connectionStatusPollJob: Job? = null
     private var appContext: Context? = null
+    @Volatile
+    private var isConnectingToRecipient = false
     private val _activeRecipient = MutableStateFlow<String?>(null)
     val activeRecipient: StateFlow<String?> = _activeRecipient.asStateFlow()
 
     fun bindService(service: ILibp2pService, context: Context) {
         libp2pService = service
         appContext = context.applicationContext
+        _connectionStatus.value = "Connecting..."
         initializeNode()
         startMessagePolling()
+        startConnectionStatusPolling()
     }
 
     fun unbindService() {
         messagePollingJob?.cancel()
+        connectionStatusPollJob?.cancel()
+        connectionStatusPollJob = null
         libp2pService = null
         appContext = null
         _connectionStatus.value = "Disconnected"
     }
 
+    private fun startConnectionStatusPolling() {
+        connectionStatusPollJob?.cancel()
+        connectionStatusPollJob = viewModelScope.launch {
+            while (isActive) {
+                delay(1500)
+                if (!isConnectingToRecipient) {
+                    val status = try {
+                        libp2pService?.getConnectionStatus() ?: "Disconnected"
+                    } catch (_: Exception) {
+                        "Disconnected"
+                    }
+                    withContext(Dispatchers.Main) {
+                        _connectionStatus.value = status
+                    }
+                }
+            }
+        }
+    }
+
     private fun initializeNode() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Load bootstrap peers from config file
                 val bootstrapPeers = appContext?.let { ctx ->
                     BootstrapConfig.loadBootstrapPeers(ctx)
                 } ?: BootstrapConfig.getDefaultBootstrapPeers()
 
                 val success = libp2pService?.initializeNode(bootstrapPeers) ?: false
-                if (success) {
-                    val peerId = libp2pService?.getLocalPeerId()
-                    val accountId = libp2pService?.getLocalAccountId()
-                    _connectionStatus.value = "Connected: ${peerId?.take(12)}… acct=${accountId?.take(8) ?: "-"}"
-                } else {
-                    _connectionStatus.value = "Failed to initialize"
+                if (!success) {
+                    withContext(Dispatchers.Main) {
+                        _connectionStatus.value = "Failed to initialize"
+                    }
                 }
+                // Connection status comes from service getConnectionStatus() (polling)
             } catch (e: Exception) {
-                _connectionStatus.value = "Error: ${e.message}"
+                withContext(Dispatchers.Main) {
+                    _connectionStatus.value = "Error: ${e.message}"
+                }
             }
         }
     }
@@ -105,6 +132,7 @@ class ChatViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val id = identifier.trim()
             if (id.isBlank()) return@launch
+            isConnectingToRecipient = true
             withContext(Dispatchers.Main) {
                 _connectionStatus.value = "Connecting…"
             }
@@ -121,6 +149,7 @@ class ChatViewModel : ViewModel() {
                 }
             }
             if (!dialOk) {
+                isConnectingToRecipient = false
                 withContext(Dispatchers.Main) {
                     _activeRecipient.value = null
                     _connectionStatus.value = "Failed to connect. Ensure both apps are open and on same network/relay."
@@ -134,13 +163,10 @@ class ChatViewModel : ViewModel() {
             }
             delay(5000L)
             val setOk = libp2pService?.setActiveRecipient(id) ?: false
+            isConnectingToRecipient = false
             withContext(Dispatchers.Main) {
                 _activeRecipient.value = if (setOk) id else null
-                _connectionStatus.value = if (setOk) {
-                    "Ready to send to: ${id.take(16)}…"
-                } else {
-                    "Connected but couldn't fetch encryption keys (check logs)"
-                }
+                _connectionStatus.value = libp2pService?.getConnectionStatus() ?: "Disconnected"
             }
         }
     }

@@ -31,6 +31,11 @@ interface ILibp2pService {
     int getAutonatStatus();
     boolean isHealthy();
     /**
+     * Current connection state for UI: "Connected", "Connecting...", or "Disabled".
+     * Reflects actual network connectivity (verified); not a cached previous state.
+     */
+    String getConnectionStatus();
+    /**
      * Discover peers via DHT (get_closest_peers). Returns peer_id strings, excluding self.
      * May block for several seconds while draining discovery events.
      */

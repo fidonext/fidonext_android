@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -57,15 +58,20 @@ class PeerListViewModel : ViewModel() {
     private var libp2pService: ILibp2pService? = null
     private var appContext: Context? = null
     private var refreshJob: Job? = null
+    private var connectionStatusPollJob: Job? = null
 
     fun bindService(service: ILibp2pService, context: Context) {
         libp2pService = service
         appContext = context.applicationContext
+        _connectionStatus.value = "Connecting..."
         loadBootstrapPeers()
         initializeNode()
+        startConnectionStatusPolling()
     }
 
     fun unbindService() {
+        connectionStatusPollJob?.cancel()
+        connectionStatusPollJob = null
         refreshJob?.cancel()
         refreshJob = null
         libp2pService = null
@@ -73,6 +79,24 @@ class PeerListViewModel : ViewModel() {
         _connectionStatus.value = "Disconnected"
         _localPeerId.value = null
         _localAccountId.value = null
+    }
+
+    /** Poll service connection status so header reflects real connectivity (Connected / Connecting... / Disabled). */
+    private fun startConnectionStatusPolling() {
+        connectionStatusPollJob?.cancel()
+        connectionStatusPollJob = viewModelScope.launch {
+            while (isActive) {
+                delay(1500)
+                val status = try {
+                    libp2pService?.getConnectionStatus() ?: "Disconnected"
+                } catch (_: Exception) {
+                    "Disconnected"
+                }
+                withContext(Dispatchers.Main) {
+                    _connectionStatus.value = status
+                }
+            }
+        }
     }
 
     private fun loadBootstrapPeers() {
@@ -156,18 +180,15 @@ class PeerListViewModel : ViewModel() {
             try {
                 val bootstrapPeers = appContext?.let { BootstrapConfig.loadBootstrapPeers(it) }
                     ?: BootstrapConfig.getDefaultBootstrapPeers()
-                _connectionStatus.value ="Connecting..."
                 val success = libp2pService?.initializeNode(bootstrapPeers) ?: false
                 if (success) {
                     val peerId = libp2pService?.getLocalPeerId()
                     val accountId = libp2pService?.getLocalAccountId()
                     withContext(Dispatchers.Main) {
-                        //_connectionStatus.value = "Connected: ${peerId?.take(12)}… acct=${accountId?.take(8) ?: "-"}"
-                        _connectionStatus.value = "Connected"
                         _localPeerId.value = peerId
                         _localAccountId.value = accountId
                     }
-                    // Delay first discovery so DHT has time to bootstrap; then run and start periodic refresh
+                    // Connection status comes from service getConnectionStatus() (connectivity loop)
                     delay(1000)
                     loadDiscoveredPeers()
                     startPeriodicRefresh()

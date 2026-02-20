@@ -19,6 +19,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Android service that runs cabi_rust_libp2p as a foreground service.
@@ -34,6 +35,12 @@ class Libp2pService : Service() {
        // private const val MESSAGE_POLL_INTERVAL_MS = 100L
         /** Re-announce directory+prekey to DHT periodically (mirrors Python _announce_loop) */
         private const val DIRECTORY_REANNOUNCE_INTERVAL_MS = 10 * 60 * 1000L
+        /** Connectivity retry: attempts per cycle, delay between attempts, pause when disabled */
+        private const val CONNECTIVITY_ATTEMPTS = 3
+        private const val CONNECTIVITY_ATTEMPT_INTERVAL_MS = 5000L
+        private const val CONNECTIVITY_DISABLED_PAUSE_MS = 30_000L
+        private const val CONNECTIVITY_VERIFY_WAIT_MS = 2000L
+        private const val CONNECTIVITY_RECHECK_WHEN_CONNECTED_MS = 5000L
 
         init {
             // Load native libraries
@@ -55,6 +62,8 @@ class Libp2pService : Service() {
     private var activeRecipientPeerId: String? = null
     /** Cached prekey bundle per peer_id (filled when opening chat / setActiveRecipient), used when sending. */
     private val recipientPrekeyCache = ConcurrentHashMap<String, ByteArray>()
+    /** Connection status for UI: "Connected", "Connecting...", or "Disabled". Updated by connectivity loop. */
+    private val connectionStatus = AtomicReference("Disabled")
 
     /** Returns cached account ID; use from binder to avoid getter name clash with getLocalAccountId(). */
     private fun cachedAccountId(): String? = localAccountId
@@ -191,6 +200,10 @@ class Libp2pService : Service() {
             return nodeHandle != 0L && isRunning.get()
         }
 
+        override fun getConnectionStatus(): String {
+            return this@Libp2pService.connectionStatus.get()
+        }
+
         override fun getDiscoveredPeers(): Array<String> {
             return this@Libp2pService.getDiscoveredPeers()
         }
@@ -206,8 +219,9 @@ class Libp2pService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
 
-        // Start health monitoring
+        // Start health monitoring and connectivity loop (3×5s retry, then 30s pause until connected)
         startHealthMonitoring()
+        startConnectivityLoop()
         startPeriodicReannounce()
     }
 
@@ -223,7 +237,7 @@ class Libp2pService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
-
+        connectionStatus.set("Disabled")
         isRunning.set(false)
         serviceScope.cancel()
 
@@ -337,9 +351,40 @@ class Libp2pService : Service() {
                 Log.w(TAG, "Initial DHT announce failed - will retry in periodic re-announce")
             }
 
+            connectionStatus.set("Connecting...")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing node", e)
+            false
+        }
+    }
+
+    /**
+     * Verifies that the node has real network connectivity (can reach DHT via bootstrap).
+     * Dials first bootstrap peer then runs a short DHT put/get test. Used to avoid showing
+     * "Connected" when device is offline (e.g. airplane mode).
+     */
+    private fun verifyConnectivity(): Boolean {
+        val handle = nodeHandle
+        val peers = lastBootstrapPeers
+        if (handle == 0L || peers.isEmpty()) return false
+        return try {
+            for (peer in peers) {
+                if (peer.isNotBlank()) {
+                    Libp2pNative.cabiNodeDial(handle, peer)
+                    break
+                }
+            }
+            Thread.sleep(CONNECTIVITY_VERIFY_WAIT_MS)
+            val testKey = "fidonext/test/${UUID.randomUUID()}".toByteArray(StandardCharsets.UTF_8)
+            val testValue = "test".toByteArray(StandardCharsets.UTF_8)
+            val putStatus = Libp2pNative.cabiNodeDhtPutRecord(handle, testKey, testValue, 60L)
+            if (putStatus != Libp2pNative.STATUS_SUCCESS) return false
+            Thread.sleep(100)
+            val retrieved = Libp2pNative.cabiNodeDhtGetRecord(handle, testKey)
+            retrieved != null && retrieved.contentEquals(testValue)
+        } catch (e: Exception) {
+            Log.d(TAG, "verifyConnectivity failed", e)
             false
         }
     }
@@ -879,6 +924,54 @@ class Libp2pService : Service() {
             while (isActive) {
                 delay(HEALTH_CHECK_INTERVAL_MS)
                 performHealthCheck()
+            }
+        }
+    }
+
+    /**
+     * Connectivity loop: verify real network connectivity. If not connected, retry 3 times with 5s
+     * interval (status "Connecting..."), then show "Disabled" for 30s and repeat. When already
+     * connected, re-check every 5s without changing status; only set "Connecting..." when
+     * re-check fails and we start reconnecting.
+     */
+    private fun startConnectivityLoop() {
+        serviceScope.launch {
+            while (isActive) {
+                if (nodeHandle == 0L) {
+                    connectionStatus.set("Disabled")
+                    delay(2000)
+                    continue
+                }
+                // If already connected, do a silent re-check without changing status
+                if (connectionStatus.get() == "Connected") {
+                    if (verifyConnectivity()) {
+                        delay(CONNECTIVITY_RECHECK_WHEN_CONNECTED_MS)
+                        continue
+                    }
+                    // Re-check failed, fall through to reconnection
+                }
+                connectionStatus.set("Connecting...")
+                var connected = false
+                for (attempt in 1..CONNECTIVITY_ATTEMPTS) {
+                    if (nodeHandle == 0L) break
+                    if (verifyConnectivity()) {
+                        connectionStatus.set("Connected")
+                        connected = true
+                        Log.d(TAG, "Connectivity verified (attempt $attempt)")
+                        break
+                    }
+                    if (attempt < CONNECTIVITY_ATTEMPTS) {
+                        Log.d(TAG, "Connectivity attempt $attempt/$CONNECTIVITY_ATTEMPTS failed, retrying in ${CONNECTIVITY_ATTEMPT_INTERVAL_MS}ms")
+                        delay(CONNECTIVITY_ATTEMPT_INTERVAL_MS)
+                    }
+                }
+                if (!connected) {
+                    connectionStatus.set("Disabled")
+                    Log.d(TAG, "Connectivity failed after $CONNECTIVITY_ATTEMPTS attempts, pausing ${CONNECTIVITY_DISABLED_PAUSE_MS}ms")
+                    delay(CONNECTIVITY_DISABLED_PAUSE_MS)
+                } else {
+                    delay(CONNECTIVITY_RECHECK_WHEN_CONNECTED_MS)
+                }
             }
         }
     }
