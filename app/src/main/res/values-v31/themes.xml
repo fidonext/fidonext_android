@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: use system splash support with the new logo -->
+    <style name="Theme.FidoNext.Splash" parent="Theme.FidoNext">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:statusBarColor">@color/logo_background</item>
+        <item name="android:navigationBarColor">@color/logo_background</item>
+        <item name="android:windowSplashScreenBackground">@color/logo_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/logo_splash</item>
+    </style>
+</resources>
