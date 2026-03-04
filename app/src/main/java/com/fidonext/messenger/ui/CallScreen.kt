@@ -119,7 +119,7 @@ fun CallScreen(
                             onClick = onNewCallClick,
                             colors = ButtonDefaults.buttonColors(containerColor = accentBlue),
                             shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.height(32.dp),
+                            modifier = Modifier.height(34.dp).width(100.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp)
                         ) {
                             Icon(

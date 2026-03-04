@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,19 +73,25 @@ fun ChatListScreen(
                         IconButton(onClick = { /* Bookmark */ }) {
                             SvgIcon("icons/saved.svg", "Saved", tint = Color.Gray)
                         }
+
                         Button(
                             onClick = { /* New Chat */ },
                             colors = ButtonDefaults.buttonColors(containerColor = accentBlue),
                             shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .height(40.dp)
+                            modifier = Modifier.height(34.dp).width(130.dp)
                                 .padding(horizontal = 16.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp)
                         ) {
-                            SvgIcon("icons/plus-circle2.svg", null, modifier = Modifier.size(18.dp), tint = Color.White)
-                            Spacer(Modifier.width(4.dp))
-                            Text("New", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = Color.White
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            Text("New", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         }
+
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
