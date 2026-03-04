@@ -136,15 +136,39 @@ fun ChatListScreen(
                 .padding(paddingValues)
                 .background(Color.White)
         ) {
+            val (pinnedChats, otherChats) = chats.partition { it.hasPin }
+
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(lightBlue)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                items(chats) { chat ->
+                // Pinned Chats Group
+                if (pinnedChats.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .padding(vertical = 8.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(lightBlue)
+                        ) {
+                            pinnedChats.forEachIndexed { index, chat ->
+                                ChatItem(chat, onChatClick)
+                                if (index < pinnedChats.size - 1) {
+                                    Divider(
+                                        modifier = Modifier.padding(start = 72.dp),
+                                        color = Color.LightGray.copy(alpha = 0.3f),
+                                        thickness = 0.5.dp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Regular Chats Group
+                items(otherChats) { chat ->
                     ChatItem(chat, onChatClick)
-                    if (chat != chats.last()) {
+                    if (chat != otherChats.last()) {
                         Divider(
                             modifier = Modifier.padding(start = 72.dp),
                             color = Color.LightGray.copy(alpha = 0.3f),
