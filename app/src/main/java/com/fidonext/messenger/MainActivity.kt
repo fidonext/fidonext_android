@@ -14,7 +14,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fidonext.messenger.service.Libp2pService
-import com.fidonext.messenger.ui.PeerListScreen
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.fidonext.messenger.ui.ChatListScreen
+import com.fidonext.messenger.ui.SettingsScreen
 import com.fidonext.messenger.ui.theme.FidoNextTheme
 import com.fidonext.messenger.viewmodel.PeerListViewModel
 
@@ -22,21 +28,16 @@ class MainActivity : ComponentActivity() {
 
     private var libp2pService: ILibp2pService? = null
     private var serviceBound = false
-    private var peerListViewModel: PeerListViewModel? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             libp2pService = ILibp2pService.Stub.asInterface(service)
             serviceBound = true
-            peerListViewModel?.let {
-                it.bindService(libp2pService!!, this@MainActivity)
-            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             libp2pService = null
             serviceBound = false
-            peerListViewModel?.unbindService()
         }
     }
 
@@ -51,7 +52,7 @@ class MainActivity : ComponentActivity() {
 
         // Start and bind to libp2p service
         val serviceIntent = Intent(this, Libp2pService::class.java)
-        startForegroundService(serviceIntent)
+        ContextCompat.startForegroundService(this, serviceIntent)
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         setContent {
@@ -60,18 +61,40 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    PeerListScreen(
-                        viewModel = viewModel(),
-                        onViewModelCreated = { peerListViewModel = it },
-                        onServiceBound = {
+                    val navController = rememberNavController()
+                    val peerListViewModel: PeerListViewModel = viewModel()
+
+                    LaunchedEffect(serviceBound) {
+                        if (serviceBound) {
                             getServiceIfBound()?.let { service ->
-                                peerListViewModel?.bindService(service, this@MainActivity)
+                                peerListViewModel.bindService(service, this@MainActivity)
                             }
-                        },
-                        onPeerClick = { peerIdentifier ->
-                            startActivity(ChatActivity.createIntent(this@MainActivity, peerIdentifier))
                         }
-                    )
+                    }
+
+                    NavHost(navController = navController, startDestination = "chat_list") {
+                        composable("chat_list") {
+                            ChatListScreen(
+                                onChatClick = { peerIdentifier ->
+                                    startActivity(ChatActivity.createIntent(this@MainActivity, peerIdentifier))
+                                },
+                                onSettingsClick = {
+                                    navController.navigate("settings")
+                                }
+                            )
+                        }
+                        composable("settings") {
+                            SettingsScreen(
+                                viewModel = peerListViewModel,
+                                onBackClick = {
+                                    navController.popBackStack()
+                                },
+                                onPeerClick = { peerIdentifier ->
+                                    startActivity(ChatActivity.createIntent(this@MainActivity, peerIdentifier))
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }

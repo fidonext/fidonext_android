@@ -17,31 +17,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
+import com.fidonext.messenger.ui.theme.FidoNextTheme
 import com.fidonext.messenger.data.Message
 import com.fidonext.messenger.viewmodel.ChatViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    viewModel: ChatViewModel,
+    messages: List<Message>,
+    connectionStatus: String,
+    activeRecipient: String?,
     initialPeerId: String?,
-    onViewModelCreated: (ChatViewModel) -> Unit = {},
-    onServiceBound: (() -> Unit)? = null,
+    onSendMessage: (String) -> Unit,
     onBackClick: () -> Unit = {}
 ) {
-    LaunchedEffect(viewModel) {
-        onViewModelCreated(viewModel)
-        onServiceBound?.invoke()
-    }
-    LaunchedEffect(initialPeerId) {
-        initialPeerId?.takeIf { it.isNotBlank() }?.let { peerId ->
-            viewModel.connectToRecipient(peerId)
-        }
-    }
-
-    val messages by viewModel.messages.collectAsState()
-    val connectionStatus by viewModel.connectionStatus.collectAsState()
-    val activeRecipient by viewModel.activeRecipient.collectAsState()
     val listState = rememberLazyListState()
     var messageText by remember { mutableStateOf("") }
 
@@ -109,13 +99,45 @@ fun ChatScreen(
                 onMessageTextChange = { messageText = it },
                 onSendClick = {
                     if (messageText.isNotBlank()) {
-                        viewModel.sendMessage(messageText)
+                        onSendMessage(messageText)
                         messageText = ""
                     }
                 }
             )
         }
     }
+}
+
+@Composable
+fun ChatScreen(
+    viewModel: ChatViewModel,
+    initialPeerId: String?,
+    onViewModelCreated: (ChatViewModel) -> Unit = {},
+    onServiceBound: (() -> Unit)? = null,
+    onBackClick: () -> Unit = {}
+) {
+    LaunchedEffect(viewModel) {
+        onViewModelCreated(viewModel)
+        onServiceBound?.invoke()
+    }
+    LaunchedEffect(initialPeerId) {
+        initialPeerId?.takeIf { it.isNotBlank() }?.let { peerId ->
+            viewModel.connectToRecipient(peerId)
+        }
+    }
+
+    val messages by viewModel.messages.collectAsState()
+    val connectionStatus by viewModel.connectionStatus.collectAsState()
+    val activeRecipient by viewModel.activeRecipient.collectAsState()
+
+    ChatScreen(
+        messages = messages,
+        connectionStatus = connectionStatus,
+        activeRecipient = activeRecipient,
+        initialPeerId = initialPeerId,
+        onSendMessage = { viewModel.sendMessage(it) },
+        onBackClick = onBackClick
+    )
 }
 
 @Composable
@@ -217,5 +239,62 @@ fun MessageInput(
                 )
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MessageItemPreview() {
+    FidoNextTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            MessageItem(
+                message = Message(
+                    id = 1,
+                    content = "Hello there!",
+                    timestamp = "10:30 AM",
+                    isSent = false,
+                    encrypted = true
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            MessageItem(
+                message = Message(
+                    id = 2,
+                    content = "Hi! How are you?",
+                    timestamp = "10:31 AM",
+                    isSent = true,
+                    encrypted = true
+                )
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MessageInputPreview() {
+    FidoNextTheme {
+        MessageInput(
+            messageText = "Hello...",
+            onMessageTextChange = {},
+            onSendClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ChatScreenPreview() {
+    FidoNextTheme {
+        ChatScreen(
+            messages = listOf(
+                Message(1, "Hello!", "10:00 AM", false, true),
+                Message(2, "Hi! This is a test message for the preview.", "10:01 AM", true, true)
+            ),
+            connectionStatus = "Connected",
+            activeRecipient = "12D3KooWK3QtiFSR9PmhNMdJGcn3LpDp7hKPiGoa361sYpQ8p1c7",
+            initialPeerId = "12D3KooWK3QtiFSR9PmhNMdJGcn3LpDp7hKPiGoa361sYpQ8p1c7",
+            onSendMessage = {}
+        )
     }
 }

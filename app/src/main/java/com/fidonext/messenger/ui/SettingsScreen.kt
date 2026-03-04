@@ -9,10 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,26 +21,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.tooling.preview.Preview
+import com.fidonext.messenger.ui.theme.FidoNextTheme
 import com.fidonext.messenger.viewmodel.DiscoveredPeer
 import com.fidonext.messenger.viewmodel.PeerListViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PeerListScreen(
-    viewModel: PeerListViewModel,
-    onViewModelCreated: (PeerListViewModel) -> Unit = {},
-    onServiceBound: (() -> Unit)? = null,
+fun SettingsScreen(
+    peers: List<DiscoveredPeer>,
+    connectionStatus: String,
+    localPeerId: String?,
+    localAccountId: String?,
+    onBackClick: () -> Unit,
+    onRefreshPeers: () -> Unit,
+    onAddPeerManually: (String) -> Unit,
     onPeerClick: (String) -> Unit
 ) {
-    LaunchedEffect(viewModel) {
-        onViewModelCreated(viewModel)
-        onServiceBound?.invoke()
-    }
-
-    val peers by viewModel.peers.collectAsState()
-    val connectionStatus by viewModel.connectionStatus.collectAsState()
-    val localPeerId by viewModel.localPeerId.collectAsState()
-    val localAccountId by viewModel.localAccountId.collectAsState()
     var showAddPeerDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -52,7 +46,7 @@ fun PeerListScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("FidoNext Messenger")
+                        Text("Settings")
                         Text(
                             text = connectionStatus,
                             fontSize = 12.sp,
@@ -60,22 +54,22 @@ fun PeerListScreen(
                         )
                     }
                 },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 actions = {
                     IconButton(
-                        onClick = { viewModel.refreshPeers() },
+                        onClick = onRefreshPeers,
                         modifier = Modifier.padding(8.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh peer list",
-                            tint = MaterialTheme.colorScheme.onPrimary
+                            contentDescription = "Refresh peer list"
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                }
             )
         },
         floatingActionButton = {
@@ -105,6 +99,12 @@ fun PeerListScreen(
                 )
             }
 
+            Text(
+                text = "Discovered Peers",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(16.dp)
+            )
+
             if (peers.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -130,11 +130,11 @@ fun PeerListScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(peers) { peer ->
-                        PeerListItem(
+                        PeerListItemSettings(
                             peer = peer,
                             onClick = { onPeerClick(peer.identifier) }
                         )
@@ -148,11 +148,35 @@ fun PeerListScreen(
         AddPeerDialog(
             onDismiss = { showAddPeerDialog = false },
             onAdd = { id ->
-                viewModel.addPeerManually(id)
+                onAddPeerManually(id)
                 showAddPeerDialog = false
             }
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    viewModel: PeerListViewModel,
+    onBackClick: () -> Unit,
+    onPeerClick: (String) -> Unit
+) {
+    val peers by viewModel.peers.collectAsState()
+    val connectionStatus by viewModel.connectionStatus.collectAsState()
+    val localPeerId by viewModel.localPeerId.collectAsState()
+    val localAccountId by viewModel.localAccountId.collectAsState()
+
+    SettingsScreen(
+        peers = peers,
+        connectionStatus = connectionStatus,
+        localPeerId = localPeerId,
+        localAccountId = localAccountId,
+        onBackClick = onBackClick,
+        onRefreshPeers = { viewModel.refreshPeers() },
+        onAddPeerManually = { viewModel.addPeerManually(it) },
+        onPeerClick = onPeerClick
+    )
 }
 
 @Composable
@@ -197,7 +221,7 @@ private fun MyIdentityCard(
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
+                            imageVector = Icons.Default.Person, // Fallback
                             contentDescription = "Copy Peer ID",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -228,7 +252,7 @@ private fun MyIdentityCard(
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
+                            imageVector = Icons.Default.Person, // Fallback
                             contentDescription = "Copy Account ID",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -289,7 +313,7 @@ private fun AddPeerDialog(
 }
 
 @Composable
-fun PeerListItem(
+fun PeerListItemSettings(
     peer: DiscoveredPeer,
     onClick: () -> Unit
 ) {
@@ -328,5 +352,52 @@ fun PeerListItem(
                 )
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MyIdentityCardPreview() {
+    FidoNextTheme {
+        MyIdentityCard(
+            peerId = "12D3KooWK3QtiFSR9PmhNMdJGcn3LpDp7hKPiGoa361sYpQ8p1c7",
+            accountId = "FIDO_ACCOUNT_123456",
+            onCopy = { _, _ -> }
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun PeerListItemSettingsPreview() {
+    FidoNextTheme {
+        PeerListItemSettings(
+            peer = DiscoveredPeer(
+                displayName = "Alex",
+                identifier = "12D3KooWK3QtiFSR9PmhNMdJGcn3LpDp7hKPiGoa361sYpQ8p1c7",
+                isBootstrap = false
+            ),
+            onClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SettingsScreenPreview() {
+    FidoNextTheme {
+        SettingsScreen(
+            peers = listOf(
+                DiscoveredPeer("Henry", "12D3KooWSNqRTV2JccvWYTxtDtXUk9Y1m7EcGLy65eRN1qSrDkdp", true),
+                DiscoveredPeer("Alex", "12D3KooWK3QtiFSR9PmhNMdJGcn3LpDp7hKPiGoa361sYpQ8p1c7", false)
+            ),
+            connectionStatus = "Connected (2 peers)",
+            localPeerId = "12D3KooWSAPjpepMckV2W9AJ2rsTM6mdTdqXHgscjx327E2rT1ag",
+            localAccountId = "ACCOUNT_MYSELF",
+            onBackClick = {},
+            onRefreshPeers = {},
+            onAddPeerManually = {},
+            onPeerClick = {}
+        )
     }
 }
