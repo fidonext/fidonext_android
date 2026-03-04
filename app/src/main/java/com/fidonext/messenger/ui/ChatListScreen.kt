@@ -34,6 +34,7 @@ data class ChatSummary(
 @Composable
 fun ChatListScreen(
     onChatClick: (String) -> Unit,
+    onCallsClick: () -> Unit = {},
     onSettingsClick: () -> Unit
 ) {
     // Mock data based on the screenshot
@@ -104,7 +105,7 @@ fun ChatListScreen(
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { },
+                    onClick = onCallsClick,
                     icon = { SvgIcon("icons/phone.svg", "Calls", tint = Color.Gray) },
                     label = { Text("Calls", color = Color.Gray) }
                 )

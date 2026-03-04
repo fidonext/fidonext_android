@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.fidonext.messenger.ui.CallScreen
 import com.fidonext.messenger.ui.ChatListScreen
 import com.fidonext.messenger.ui.SettingsScreen
 import com.fidonext.messenger.ui.theme.FidoNextTheme
@@ -78,9 +79,18 @@ class MainActivity : ComponentActivity() {
                                 onChatClick = { peerIdentifier ->
                                     startActivity(ChatActivity.createIntent(this@MainActivity, peerIdentifier))
                                 },
+                                onCallsClick = { navController.navigate("calls") },
                                 onSettingsClick = {
                                     navController.navigate("settings")
                                 }
+                            )
+                        }
+                        composable("calls") {
+                            CallScreen(
+                                onChatsClick = { navController.navigate("chat_list") { popUpTo("calls") { inclusive = true } } },
+                                onContactsClick = { },
+                                onSettingsClick = { navController.navigate("settings") },
+                                onSearchClick = { }
                             )
                         }
                         composable("settings") {
