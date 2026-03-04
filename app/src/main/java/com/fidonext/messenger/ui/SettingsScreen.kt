@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
+import com.fidonext.messenger.ui.SvgIcon
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +73,47 @@ fun SettingsScreen(
                     }
                 }
             )
+        },
+        bottomBar = {
+            val accentBlue = Color(0xFF007AFF)
+            NavigationBar(
+                containerColor = Color(0xFFF8F8F8),
+                tonalElevation = 0.dp
+            ) {
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onBackClick,
+                    icon = { SvgIcon("icons/chats.svg", "Chats", tint = Color.Gray) },
+                    label = { Text("Chats", color = Color.Gray) }
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { },
+                    icon = { SvgIcon("icons/phone.svg", "Calls", tint = Color.Gray) },
+                    label = { Text("Calls", color = Color.Gray) }
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { },
+                    icon = { SvgIcon("icons/contacts.svg", "Contacts", tint = Color.Gray) },
+                    label = { Text("Contacts", color = Color.Gray) }
+                )
+                NavigationBarItem(
+                    selected = true,
+                    onClick = { },
+                    icon = { SvgIcon("icons/settings.svg", "Settings", tint = accentBlue) },
+                    label = { Text("Settings", color = accentBlue) },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = Color(0xFFF8F8F8)
+                    )
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { },
+                    icon = { SvgIcon("icons/search.svg", "Search", tint = Color.Gray) },
+                    label = { Text("Search", color = Color.Gray) }
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
