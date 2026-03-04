@@ -79,7 +79,7 @@ fun ChatListScreen(
                                 .padding(horizontal = 16.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                         ) {
-                            SvgIcon("icons/plus-circle.svg", null, modifier = Modifier.size(18.dp), tint = Color.White)
+                            SvgIcon("icons/plus-circle2.svg", null, modifier = Modifier.size(18.dp), tint = Color.White)
                             Spacer(Modifier.width(4.dp))
                             Text("New", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
