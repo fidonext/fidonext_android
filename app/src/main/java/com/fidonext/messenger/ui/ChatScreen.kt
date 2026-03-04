@@ -10,11 +10,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -40,6 +46,15 @@ fun ChatScreen(
 ) {
     val listState = rememberLazyListState()
     var messageText by remember { mutableStateOf("") }
+
+    // User display name calculation
+    val userName = remember(activeRecipient) {
+        activeRecipient?.take(8)?.let { "Peer $it" } ?: "Inessa"
+    }
+
+    val statusText = remember(connectionStatus) {
+        if (connectionStatus == "Connected") "last seen a week ago" else connectionStatus
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -76,13 +91,8 @@ fun ChatScreen(
                         )
                         
                         Spacer(modifier = Modifier.width(12.dp))
-                        
+
                         Column {
-                            val userName = if (activeRecipient != null) {
-                                "Peer ${activeRecipient.take(8)}"
-                            } else {
-                                "Inessa" // Matches screenshot name
-                            }
                             Text(
                                 text = userName,
                                 fontSize = 18.sp,
@@ -90,8 +100,9 @@ fun ChatScreen(
                                 color = Color.Black
                             )
                             Text(
-                                text = if (connectionStatus == "Connected") "last seen a week ago" else connectionStatus,
+                                text = statusText,
                                 fontSize = 12.sp,
+                                lineHeight = 10.sp,
                                 color = Color.Gray
                             )
                         }
@@ -199,11 +210,9 @@ fun ChatScreen(
 @Composable
 fun MessageItem(message: Message) {
     val alignment = if (message.isSent) Alignment.CenterEnd else Alignment.CenterStart
-    val backgroundColor = if (message.isSent)
-        Color(0xFFD1E1FF) // Light Blue for sent
-    else
-        Color(0xFFE9E9EB) // Light Gray for received
-    
+    val backgroundColor = remember(message.isSent) {
+        if (message.isSent) Color(0xFFD1E1FF) else Color(0xFFE9E9EB)
+    }
     val textColor = Color.Black
 
     Box(
@@ -367,12 +376,17 @@ fun MessageInput(
                         tint = Color.Gray
                     )
                 } else {
-                    SvgIcon(
-                        path = "icons/send.svg",
+
+                    Icon(
+                        imageVector =  Icons.Outlined.Send,
                         contentDescription = "Send",
-                        tint = Color.White,
                         modifier = Modifier.size(20.dp)
+
+                            .rotate((-45).toFloat())
+                        ,
+                        tint = Color.White
                     )
+
                 }
             }
         }

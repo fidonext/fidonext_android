@@ -40,17 +40,19 @@ fun ChatListScreen(
     onSettingsClick: () -> Unit
 ) {
     // Mock data based on the screenshot
-    val chats = listOf(
-        ChatSummary("H", "Henry", "I don't know what you're doing", "3:44 pm", 1, true, true),
-        ChatSummary("A", "Alex", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "9:00 am", 0, false, true),
-        ChatSummary("I", "Inessa", "Kisses! 😘", "Friday", 0, false, true),
-        ChatSummary("L", "Luna", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "8:34 am", 1, false, false),
-        ChatSummary("M", "Milly", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "6:00 am", 0, false, false),
-        ChatSummary("An", "Andrew", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "Yesterday", 0, false, false)
-    )
+    val chats = remember {
+        listOf(
+            ChatSummary("H", "Henry", "I don't know what you're doing", "3:44 pm", 1, true, true),
+            ChatSummary("A", "Alex", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "9:00 am", 0, false, true),
+            ChatSummary("I", "Inessa", "Kisses! 😘", "Friday", 0, false, true),
+            ChatSummary("L", "Luna", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "8:34 am", 1, false, false),
+            ChatSummary("M", "Milly", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "6:00 am", 0, false, false),
+            ChatSummary("An", "Andrew", "Lorem ipsum dolor sit amet, consectetuer adipiscing elit...", "Yesterday", 0, false, false)
+        )
+    }
 
-    val lightBlue = Color(0xFFE9F2FF)
-    val accentBlue = Color(0xFF007AFF)
+    val lightBlue = remember { Color(0xFFE9F2FF) }
+    val accentBlue = remember { Color(0xFF007AFF) }
 
     Scaffold(
         topBar = {
@@ -192,7 +194,7 @@ fun ChatListScreen(
 
 @Composable
 fun ChatItem(chat: ChatSummary, onClick: (String) -> Unit) {
-    val accentBlue = Color(0xFF007AFF)
+    val accentBlue = remember { Color(0xFF007AFF) }
 
     Row(
         modifier = Modifier

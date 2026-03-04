@@ -223,7 +223,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun MyIdentityCard(
+fun MyIdentityCard(
     peerId: String?,
     accountId: String?,
     onCopy: (text: String, label: String) -> Unit
@@ -313,7 +313,7 @@ private fun MyIdentityCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddPeerDialog(
+fun AddPeerDialog(
     onDismiss: () -> Unit,
     onAdd: (String) -> Unit
 ) {
@@ -421,6 +421,17 @@ fun PeerListItemSettingsPreview() {
                 isBootstrap = false
             ),
             onClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun AddPeerDialogPreview() {
+    FidoNextTheme {
+        AddPeerDialog(
+            onDismiss = {},
+            onAdd = {}
         )
     }
 }

@@ -49,20 +49,24 @@ fun CallScreen(
 ) {
     var filterAll by remember { mutableStateOf(true) }
 
-    val accentBlue = Color(0xFF007AFF)
-    val filterInactiveBg = Color(0xFFE5E5EA)
-    val filterInactiveText = Color(0xFF8E8E93)
-    val missedRed = Color(0xFFFF3B30)
-    val bottomNavGray = Color(0xFF8E8E93)
+    val accentBlue = remember { Color(0xFF007AFF) }
+    val filterInactiveBg = remember { Color(0xFFE5E5EA) }
+    val filterInactiveText = remember { Color(0xFF8E8E93) }
+    val missedRed = remember { Color(0xFFFF3B30) }
+    val bottomNavGray = remember { Color(0xFF8E8E93) }
 
-    val allCalls = listOf(
-        CallEntry("May", CallType.Missed, null, "3:44 pm"),
-        CallEntry("May", CallType.Outgoing, 15, "3:44 pm"),
-        CallEntry("May", CallType.Incoming, 15, "3:44 pm"),
-        CallEntry("May", CallType.Outgoing, 15, "yesterday"),
-        CallEntry("May", CallType.Outgoing, 15, "last friday")
-    )
-    val calls = if (filterAll) allCalls else allCalls.filter { it.callType == CallType.Missed }
+    val allCalls = remember {
+        listOf(
+            CallEntry("May", CallType.Missed, null, "3:44 pm"),
+            CallEntry("May", CallType.Outgoing, 15, "3:44 pm"),
+            CallEntry("May", CallType.Incoming, 15, "3:44 pm"),
+            CallEntry("May", CallType.Outgoing, 15, "yesterday"),
+            CallEntry("May", CallType.Outgoing, 15, "last friday")
+        )
+    }
+    val calls = remember(filterAll) {
+        if (filterAll) allCalls else allCalls.filter { it.callType == CallType.Missed }
+    }
 
     Scaffold(
         topBar = {
@@ -225,19 +229,23 @@ fun CallScreen(
 }
 
 @Composable
-private fun CallItem(
+fun CallItem(
     call: CallEntry,
     accentBlue: Color,
     missedRed: Color,
     onInfoClick: () -> Unit
 ) {
-    val subtitleText = when (call.callType) {
-        CallType.Missed -> "Missed call"
-        CallType.Outgoing -> "Outgoing call (${call.durationMinutes ?: 0} min)"
-        CallType.Incoming -> "Incoming call (${call.durationMinutes ?: 0} min)"
+    val subtitleText = remember(call.callType, call.durationMinutes) {
+        when (call.callType) {
+            CallType.Missed -> "Missed call"
+            CallType.Outgoing -> "Outgoing call (${call.durationMinutes ?: 0} min)"
+            CallType.Incoming -> "Incoming call (${call.durationMinutes ?: 0} min)"
+        }
     }
     val subtitleColor = Color(0xFF8E8E93)
-    val nameColor = if (call.callType == CallType.Missed) missedRed else Color.Black
+    val nameColor = remember(call.callType, missedRed) {
+        if (call.callType == CallType.Missed) missedRed else Color.Black
+    }
 
     Row(
         modifier = Modifier
@@ -310,6 +318,33 @@ private fun CallItem(
                     tint = accentBlue
                 )
             }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CallItemPreview() {
+    FidoNextTheme {
+        Column {
+            CallItem(
+                call = CallEntry("May", CallType.Missed, null, "3:44 pm"),
+                accentBlue = Color(0xFF007AFF),
+                missedRed = Color(0xFFFF3B30),
+                onInfoClick = {}
+            )
+            CallItem(
+                call = CallEntry("Alex", CallType.Outgoing, 15, "yesterday"),
+                accentBlue = Color(0xFF007AFF),
+                missedRed = Color(0xFFFF3B30),
+                onInfoClick = {}
+            )
+            CallItem(
+                call = CallEntry("Henry", CallType.Incoming, 23, "last friday"),
+                accentBlue = Color(0xFF007AFF),
+                missedRed = Color(0xFFFF3B30),
+                onInfoClick = {}
+            )
         }
     }
 }
