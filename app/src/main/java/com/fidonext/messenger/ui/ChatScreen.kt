@@ -1,23 +1,29 @@
 package com.fidonext.messenger.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
+import com.fidonext.messenger.R
 import com.fidonext.messenger.ui.theme.FidoNextTheme
 import com.fidonext.messenger.data.Message
 import com.fidonext.messenger.viewmodel.ChatViewModel
@@ -46,32 +52,63 @@ fun ChatScreen(
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back to peers",
-                            tint = MaterialTheme.colorScheme.onPrimary
+                        SvgIcon(
+                            path = "icons/back.svg",
+                            contentDescription = "Back",
+                            tint = Color(0xFF007AFF) // iOS Blue
                         )
                     }
                 },
                 title = {
-                    Column {
-                        Text("FidoNext Messenger")
-                        Text(
-                            text = (activeRecipient ?: initialPeerId)?.let { "Chat: ${it.take(20)}…" }
-                                ?: "Chat",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // User Avatar
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_launcher_foreground), // Placeholder
+                            contentDescription = "Avatar",
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Gray),
+                            contentScale = ContentScale.Crop
                         )
-                        Text(
-                            text = connectionStatus,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Light
+                        
+                        Spacer(modifier = Modifier.width(12.dp))
+                        
+                        Column {
+                            val userName = if (activeRecipient != null) {
+                                "Peer ${activeRecipient.take(8)}"
+                            } else {
+                                "Inessa" // Matches screenshot name
+                            }
+                            Text(
+                                text = userName,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                            Text(
+                                text = if (connectionStatus == "Connected") "last seen a week ago" else connectionStatus,
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { /* TODO: More actions */ }) {
+                        SvgIcon(
+                            path = "icons/more.svg",
+                            contentDescription = "More",
+                            tint = Color.Black
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = Color.White,
+                    titleContentColor = Color.Black
                 )
             )
         }
@@ -80,6 +117,7 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .background(Color(0xFFF2F2F7)) // iOS Background Gray
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -87,8 +125,26 @@ fun ChatScreen(
                     .fillMaxWidth(),
                 state = listState,
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            color = Color(0x808E8E93), // iOS System Gray 
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "Friday, 18",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                fontSize = 12.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
                 items(messages) { message ->
                     MessageItem(message = message)
                 }
@@ -144,49 +200,80 @@ fun ChatScreen(
 fun MessageItem(message: Message) {
     val alignment = if (message.isSent) Alignment.CenterEnd else Alignment.CenterStart
     val backgroundColor = if (message.isSent)
-        MaterialTheme.colorScheme.primary
+        Color(0xFFD1E1FF) // Light Blue for sent
     else
-        MaterialTheme.colorScheme.surfaceVariant
-    val textColor = if (message.isSent)
-        MaterialTheme.colorScheme.onPrimary
-    else
-        MaterialTheme.colorScheme.onSurfaceVariant
+        Color(0xFFE9E9EB) // Light Gray for received
+    
+    val textColor = Color.Black
 
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = alignment
     ) {
-        Column {
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = if (message.isSent) Arrangement.End else Arrangement.Start,
+            modifier = Modifier.fillMaxWidth(0.85f)
+        ) {
+            if (message.isSent) {
+                Text(
+                    text = message.timestamp,
+                    fontSize = 11.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                )
+            }
+
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(
+                    topStart = 18.dp,
+                    topEnd = 18.dp,
+                    bottomStart = if (message.isSent) 18.dp else 4.dp,
+                    bottomEnd = if (message.isSent) 4.dp else 18.dp
+                ),
                 color = backgroundColor,
                 modifier = Modifier.widthIn(max = 280.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp)
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
                         text = message.content,
                         color = textColor,
-                        fontSize = 16.sp
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp
                     )
                     if (message.encrypted) {
-                        Text(
-                            text = "🔒 Encrypted",
-                            color = textColor.copy(alpha = 0.7f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Light,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            SvgIcon(
+                                path = "icons/lock.svg",
+                                contentDescription = "Encrypted",
+                                modifier = Modifier.size(10.dp),
+                                tint = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Encrypted",
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Light
+                            )
+                        }
                     }
                 }
             }
-            Text(
-                text = message.timestamp,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-            )
+
+            if (!message.isSent) {
+                Text(
+                    text = message.timestamp,
+                    fontSize = 11.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+                )
+            }
         }
     }
 }
@@ -198,45 +285,95 @@ fun MessageInput(
     onSendClick: () -> Unit
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp
+        color = Color.White,
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextField(
-                value = messageText,
-                onValueChange = onMessageTextChange,
+            IconButton(onClick = { /* TODO: Add media */ }) {
+                SvgIcon(
+                    path = "icons/plus-circle.svg",
+                    contentDescription = "Add",
+                    tint = Color.Gray
+                )
+            }
+
+            Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 8.dp),
-                placeholder = { Text("Type a message...") },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(24.dp)
-            )
+                    .heightIn(min = 40.dp, max = 120.dp),
+                color = Color(0xFFF2F2F7),
+                shape = RoundedCornerShape(20.dp),
+                border = null
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                    ) {
+                        if (messageText.isEmpty()) {
+                            Text(
+                                text = "Message",
+                                color = Color.Gray,
+                                fontSize = 16.sp
+                            )
+                        }
+                        BasicTextField(
+                            value = messageText,
+                            onValueChange = onMessageTextChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontSize = 16.sp,
+                                color = Color.Black
+                            )
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = { /* TODO: Emojis */ },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        SvgIcon(
+                            path = "icons/emoji.svg",
+                            contentDescription = "Emoji",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             IconButton(
                 onClick = onSendClick,
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(24.dp)
-                    )
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (messageText.isNotEmpty()) Color(0xFF007AFF) else Color.Transparent)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Send,
-                    contentDescription = "Send",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
+                if (messageText.isEmpty()) {
+                    SvgIcon(
+                        path = "icons/microphone.svg",
+                        contentDescription = "Voice",
+                        tint = Color.Gray
+                    )
+                } else {
+                    SvgIcon(
+                        path = "icons/send.svg",
+                        contentDescription = "Send",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
